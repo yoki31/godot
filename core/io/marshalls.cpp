@@ -1,32 +1,32 @@
-/*************************************************************************/
-/*  marshalls.cpp                                                        */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  marshalls.cpp                                                         */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #include "marshalls.h"
 
@@ -52,9 +52,8 @@ ObjectID EncodedObjectAsID::get_object_id() const {
 	return id;
 }
 
-#define _S(a) ((int32_t)a)
-#define ERR_FAIL_ADD_OF(a, b, err) ERR_FAIL_COND_V(_S(b) < 0 || _S(a) < 0 || _S(a) > INT_MAX - _S(b), err)
-#define ERR_FAIL_MUL_OF(a, b, err) ERR_FAIL_COND_V(_S(a) < 0 || _S(b) <= 0 || _S(a) > INT_MAX / _S(b), err)
+#define ERR_FAIL_ADD_OF(a, b, err) ERR_FAIL_COND_V(((int32_t)(b)) < 0 || ((int32_t)(a)) < 0 || ((int32_t)(a)) > INT_MAX - ((int32_t)(b)), err)
+#define ERR_FAIL_MUL_OF(a, b, err) ERR_FAIL_COND_V(((int32_t)(a)) < 0 || ((int32_t)(b)) <= 0 || ((int32_t)(a)) > INT_MAX / ((int32_t)(b)), err)
 
 #define ENCODE_MASK 0xFF
 #define ENCODE_FLAG_64 1 << 16
@@ -79,7 +78,7 @@ static Error _decode_string(const uint8_t *&buf, int &len, int *r_len, String &r
 	ERR_FAIL_COND_V(strlen < 0 || strlen + pad > len, ERR_FILE_EOF);
 
 	String str;
-	ERR_FAIL_COND_V(str.parse_utf8((const char *)buf, strlen), ERR_INVALID_DATA);
+	ERR_FAIL_COND_V(str.parse_utf8((const char *)buf, strlen) != OK, ERR_INVALID_DATA);
 	r_string = str;
 
 	// Add padding
@@ -95,7 +94,8 @@ static Error _decode_string(const uint8_t *&buf, int &len, int *r_len, String &r
 	return OK;
 }
 
-Error decode_variant(Variant &r_variant, const uint8_t *p_buffer, int p_len, int *r_len, bool p_allow_objects) {
+Error decode_variant(Variant &r_variant, const uint8_t *p_buffer, int p_len, int *r_len, bool p_allow_objects, int p_depth) {
+	ERR_FAIL_COND_V_MSG(p_depth > Variant::MAX_RECURSION_DEPTH, ERR_OUT_OF_MEMORY, "Variant is too deep. Bailing.");
 	const uint8_t *buf = p_buffer;
 	int len = p_len;
 
@@ -285,13 +285,53 @@ Error decode_variant(Variant &r_variant, const uint8_t *p_buffer, int p_len, int
 			}
 
 		} break;
+		case Variant::VECTOR4: {
+			Vector4 val;
+			if (type & ENCODE_FLAG_64) {
+				ERR_FAIL_COND_V((size_t)len < sizeof(double) * 4, ERR_INVALID_DATA);
+				val.x = decode_double(&buf[0]);
+				val.y = decode_double(&buf[sizeof(double)]);
+				val.z = decode_double(&buf[sizeof(double) * 2]);
+				val.w = decode_double(&buf[sizeof(double) * 3]);
+
+				if (r_len) {
+					(*r_len) += sizeof(double) * 4;
+				}
+			} else {
+				ERR_FAIL_COND_V((size_t)len < sizeof(float) * 4, ERR_INVALID_DATA);
+				val.x = decode_float(&buf[0]);
+				val.y = decode_float(&buf[sizeof(float)]);
+				val.z = decode_float(&buf[sizeof(float) * 2]);
+				val.w = decode_float(&buf[sizeof(float) * 3]);
+
+				if (r_len) {
+					(*r_len) += sizeof(float) * 4;
+				}
+			}
+			r_variant = val;
+
+		} break;
+		case Variant::VECTOR4I: {
+			ERR_FAIL_COND_V(len < 4 * 4, ERR_INVALID_DATA);
+			Vector4i val;
+			val.x = decode_uint32(&buf[0]);
+			val.y = decode_uint32(&buf[4]);
+			val.z = decode_uint32(&buf[8]);
+			val.w = decode_uint32(&buf[12]);
+			r_variant = val;
+
+			if (r_len) {
+				(*r_len) += 4 * 4;
+			}
+
+		} break;
 		case Variant::TRANSFORM2D: {
 			Transform2D val;
 			if (type & ENCODE_FLAG_64) {
 				ERR_FAIL_COND_V((size_t)len < sizeof(double) * 6, ERR_INVALID_DATA);
 				for (int i = 0; i < 3; i++) {
 					for (int j = 0; j < 2; j++) {
-						val.elements[i][j] = decode_double(&buf[(i * 2 + j) * sizeof(double)]);
+						val.columns[i][j] = decode_double(&buf[(i * 2 + j) * sizeof(double)]);
 					}
 				}
 
@@ -302,7 +342,7 @@ Error decode_variant(Variant &r_variant, const uint8_t *p_buffer, int p_len, int
 				ERR_FAIL_COND_V((size_t)len < sizeof(float) * 6, ERR_INVALID_DATA);
 				for (int i = 0; i < 3; i++) {
 					for (int j = 0; j < 2; j++) {
-						val.elements[i][j] = decode_float(&buf[(i * 2 + j) * sizeof(float)]);
+						val.columns[i][j] = decode_float(&buf[(i * 2 + j) * sizeof(float)]);
 					}
 				}
 
@@ -401,7 +441,7 @@ Error decode_variant(Variant &r_variant, const uint8_t *p_buffer, int p_len, int
 				ERR_FAIL_COND_V((size_t)len < sizeof(double) * 9, ERR_INVALID_DATA);
 				for (int i = 0; i < 3; i++) {
 					for (int j = 0; j < 3; j++) {
-						val.elements[i][j] = decode_double(&buf[(i * 3 + j) * sizeof(double)]);
+						val.rows[i][j] = decode_double(&buf[(i * 3 + j) * sizeof(double)]);
 					}
 				}
 
@@ -412,7 +452,7 @@ Error decode_variant(Variant &r_variant, const uint8_t *p_buffer, int p_len, int
 				ERR_FAIL_COND_V((size_t)len < sizeof(float) * 9, ERR_INVALID_DATA);
 				for (int i = 0; i < 3; i++) {
 					for (int j = 0; j < 3; j++) {
-						val.elements[i][j] = decode_float(&buf[(i * 3 + j) * sizeof(float)]);
+						val.rows[i][j] = decode_float(&buf[(i * 3 + j) * sizeof(float)]);
 					}
 				}
 
@@ -429,7 +469,7 @@ Error decode_variant(Variant &r_variant, const uint8_t *p_buffer, int p_len, int
 				ERR_FAIL_COND_V((size_t)len < sizeof(double) * 12, ERR_INVALID_DATA);
 				for (int i = 0; i < 3; i++) {
 					for (int j = 0; j < 3; j++) {
-						val.basis.elements[i][j] = decode_double(&buf[(i * 3 + j) * sizeof(double)]);
+						val.basis.rows[i][j] = decode_double(&buf[(i * 3 + j) * sizeof(double)]);
 					}
 				}
 				val.origin[0] = decode_double(&buf[sizeof(double) * 9]);
@@ -443,7 +483,7 @@ Error decode_variant(Variant &r_variant, const uint8_t *p_buffer, int p_len, int
 				ERR_FAIL_COND_V((size_t)len < sizeof(float) * 12, ERR_INVALID_DATA);
 				for (int i = 0; i < 3; i++) {
 					for (int j = 0; j < 3; j++) {
-						val.basis.elements[i][j] = decode_float(&buf[(i * 3 + j) * sizeof(float)]);
+						val.basis.rows[i][j] = decode_float(&buf[(i * 3 + j) * sizeof(float)]);
 					}
 				}
 				val.origin[0] = decode_float(&buf[sizeof(float) * 9]);
@@ -452,6 +492,33 @@ Error decode_variant(Variant &r_variant, const uint8_t *p_buffer, int p_len, int
 
 				if (r_len) {
 					(*r_len) += sizeof(float) * 12;
+				}
+			}
+			r_variant = val;
+
+		} break;
+		case Variant::PROJECTION: {
+			Projection val;
+			if (type & ENCODE_FLAG_64) {
+				ERR_FAIL_COND_V((size_t)len < sizeof(double) * 16, ERR_INVALID_DATA);
+				for (int i = 0; i < 4; i++) {
+					for (int j = 0; j < 4; j++) {
+						val.columns[i][j] = decode_double(&buf[(i * 4 + j) * sizeof(double)]);
+					}
+				}
+				if (r_len) {
+					(*r_len) += sizeof(double) * 16;
+				}
+			} else {
+				ERR_FAIL_COND_V((size_t)len < sizeof(float) * 16, ERR_INVALID_DATA);
+				for (int i = 0; i < 4; i++) {
+					for (int j = 0; j < 4; j++) {
+						val.columns[i][j] = decode_float(&buf[(i * 4 + j) * sizeof(float)]);
+					}
+				}
+
+				if (r_len) {
+					(*r_len) += sizeof(float) * 16;
 				}
 			}
 			r_variant = val;
@@ -532,7 +599,13 @@ Error decode_variant(Variant &r_variant, const uint8_t *p_buffer, int p_len, int
 
 		} break;
 		case Variant::RID: {
-			r_variant = RID();
+			ERR_FAIL_COND_V(len < 8, ERR_INVALID_DATA);
+			uint64_t id = decode_uint64(buf);
+			if (r_len) {
+				(*r_len) += 8;
+			}
+
+			r_variant = RID::from_uint64(id);
 		} break;
 		case Variant::OBJECT: {
 			if (type & ENCODE_FLAG_OBJECT_AS_ID) {
@@ -562,7 +635,7 @@ Error decode_variant(Variant &r_variant, const uint8_t *p_buffer, int p_len, int
 					return err;
 				}
 
-				if (str == String()) {
+				if (str.is_empty()) {
 					r_variant = (Object *)nullptr;
 				} else {
 					Object *obj = ClassDB::instantiate(str);
@@ -586,7 +659,7 @@ Error decode_variant(Variant &r_variant, const uint8_t *p_buffer, int p_len, int
 
 						Variant value;
 						int used;
-						err = decode_variant(value, buf, len, &used, p_allow_objects);
+						err = decode_variant(value, buf, len, &used, p_allow_objects, p_depth + 1);
 						if (err) {
 							return err;
 						}
@@ -601,7 +674,7 @@ Error decode_variant(Variant &r_variant, const uint8_t *p_buffer, int p_len, int
 					}
 
 					if (Object::cast_to<RefCounted>(obj)) {
-						REF ref = REF(Object::cast_to<RefCounted>(obj));
+						Ref<RefCounted> ref = Ref<RefCounted>(Object::cast_to<RefCounted>(obj));
 						r_variant = ref;
 					} else {
 						r_variant = obj;
@@ -614,9 +687,20 @@ Error decode_variant(Variant &r_variant, const uint8_t *p_buffer, int p_len, int
 			r_variant = Callable();
 		} break;
 		case Variant::SIGNAL: {
-			r_variant = Signal();
-		} break;
+			String name;
+			Error err = _decode_string(buf, len, r_len, name);
+			if (err) {
+				return err;
+			}
 
+			ERR_FAIL_COND_V(len < 8, ERR_INVALID_DATA);
+			ObjectID id = ObjectID(decode_uint64(buf));
+			if (r_len) {
+				(*r_len) += 8;
+			}
+
+			r_variant = Signal(id, StringName(name));
+		} break;
 		case Variant::DICTIONARY: {
 			ERR_FAIL_COND_V(len < 4, ERR_INVALID_DATA);
 			int32_t count = decode_uint32(buf);
@@ -636,7 +720,7 @@ Error decode_variant(Variant &r_variant, const uint8_t *p_buffer, int p_len, int
 				Variant key, value;
 
 				int used;
-				Error err = decode_variant(key, buf, len, &used, p_allow_objects);
+				Error err = decode_variant(key, buf, len, &used, p_allow_objects, p_depth + 1);
 				ERR_FAIL_COND_V_MSG(err != OK, err, "Error when trying to decode Variant.");
 
 				buf += used;
@@ -645,7 +729,7 @@ Error decode_variant(Variant &r_variant, const uint8_t *p_buffer, int p_len, int
 					(*r_len) += used;
 				}
 
-				err = decode_variant(value, buf, len, &used, p_allow_objects);
+				err = decode_variant(value, buf, len, &used, p_allow_objects, p_depth + 1);
 				ERR_FAIL_COND_V_MSG(err != OK, err, "Error when trying to decode Variant.");
 
 				buf += used;
@@ -678,7 +762,7 @@ Error decode_variant(Variant &r_variant, const uint8_t *p_buffer, int p_len, int
 			for (int i = 0; i < count; i++) {
 				int used = 0;
 				Variant v;
-				Error err = decode_variant(v, buf, len, &used, p_allow_objects);
+				Error err = decode_variant(v, buf, len, &used, p_allow_objects, p_depth + 1);
 				ERR_FAIL_COND_V_MSG(err != OK, err, "Error when trying to decode Variant.");
 				buf += used;
 				len -= used;
@@ -1031,7 +1115,7 @@ static void _encode_string(const String &p_string, uint8_t *&buf, int &r_len) {
 }
 
 Error encode_variant(const Variant &p_variant, uint8_t *r_buffer, int &r_len, bool p_full_objects, int p_depth) {
-	ERR_FAIL_COND_V_MSG(p_depth > Variant::MAX_RECURSION_DEPTH, ERR_OUT_OF_MEMORY, "Potential inifite recursion detected. Bailing.");
+	ERR_FAIL_COND_V_MSG(p_depth > Variant::MAX_RECURSION_DEPTH, ERR_OUT_OF_MEMORY, "Potential infinite recursion detected. Bailing.");
 	uint8_t *buf = r_buffer;
 
 	r_len = 0;
@@ -1068,6 +1152,21 @@ Error encode_variant(const Variant &p_variant, uint8_t *r_buffer, int &r_len, bo
 				flags |= ENCODE_FLAG_OBJECT_AS_ID;
 			}
 		} break;
+#ifdef REAL_T_IS_DOUBLE
+		case Variant::VECTOR2:
+		case Variant::VECTOR3:
+		case Variant::PACKED_VECTOR2_ARRAY:
+		case Variant::PACKED_VECTOR3_ARRAY:
+		case Variant::TRANSFORM2D:
+		case Variant::TRANSFORM3D:
+		case Variant::QUATERNION:
+		case Variant::PLANE:
+		case Variant::BASIS:
+		case Variant::RECT2:
+		case Variant::AABB: {
+			flags |= ENCODE_FLAG_64;
+		} break;
+#endif // REAL_T_IS_DOUBLE
 		default: {
 		} // nothing to do at this stage
 	}
@@ -1246,12 +1345,36 @@ Error encode_variant(const Variant &p_variant, uint8_t *r_buffer, int &r_len, bo
 				Transform2D val = p_variant;
 				for (int i = 0; i < 3; i++) {
 					for (int j = 0; j < 2; j++) {
-						memcpy(&buf[(i * 2 + j) * sizeof(real_t)], &val.elements[i][j], sizeof(real_t));
+						memcpy(&buf[(i * 2 + j) * sizeof(real_t)], &val.columns[i][j], sizeof(real_t));
 					}
 				}
 			}
 
 			r_len += 6 * sizeof(real_t);
+
+		} break;
+		case Variant::VECTOR4: {
+			if (buf) {
+				Vector4 v4 = p_variant;
+				encode_real(v4.x, &buf[0]);
+				encode_real(v4.y, &buf[sizeof(real_t)]);
+				encode_real(v4.z, &buf[sizeof(real_t) * 2]);
+				encode_real(v4.w, &buf[sizeof(real_t) * 3]);
+			}
+
+			r_len += 4 * sizeof(real_t);
+
+		} break;
+		case Variant::VECTOR4I: {
+			if (buf) {
+				Vector4i v4 = p_variant;
+				encode_uint32(v4.x, &buf[0]);
+				encode_uint32(v4.y, &buf[4]);
+				encode_uint32(v4.z, &buf[8]);
+				encode_uint32(v4.w, &buf[12]);
+			}
+
+			r_len += 4 * 4;
 
 		} break;
 		case Variant::PLANE: {
@@ -1297,7 +1420,7 @@ Error encode_variant(const Variant &p_variant, uint8_t *r_buffer, int &r_len, bo
 				Basis val = p_variant;
 				for (int i = 0; i < 3; i++) {
 					for (int j = 0; j < 3; j++) {
-						memcpy(&buf[(i * 3 + j) * sizeof(real_t)], &val.elements[i][j], sizeof(real_t));
+						memcpy(&buf[(i * 3 + j) * sizeof(real_t)], &val.rows[i][j], sizeof(real_t));
 					}
 				}
 			}
@@ -1310,7 +1433,7 @@ Error encode_variant(const Variant &p_variant, uint8_t *r_buffer, int &r_len, bo
 				Transform3D val = p_variant;
 				for (int i = 0; i < 3; i++) {
 					for (int j = 0; j < 3; j++) {
-						memcpy(&buf[(i * 3 + j) * sizeof(real_t)], &val.basis.elements[i][j], sizeof(real_t));
+						memcpy(&buf[(i * 3 + j) * sizeof(real_t)], &val.basis.rows[i][j], sizeof(real_t));
 					}
 				}
 
@@ -1320,6 +1443,19 @@ Error encode_variant(const Variant &p_variant, uint8_t *r_buffer, int &r_len, bo
 			}
 
 			r_len += 12 * sizeof(real_t);
+
+		} break;
+		case Variant::PROJECTION: {
+			if (buf) {
+				Projection val = p_variant;
+				for (int i = 0; i < 4; i++) {
+					for (int j = 0; j < 4; j++) {
+						memcpy(&buf[(i * 4 + j) * sizeof(real_t)], &val.columns[i][j], sizeof(real_t));
+					}
+				}
+			}
+
+			r_len += 16 * sizeof(real_t);
 
 		} break;
 
@@ -1337,10 +1473,12 @@ Error encode_variant(const Variant &p_variant, uint8_t *r_buffer, int &r_len, bo
 
 		} break;
 		case Variant::RID: {
-		} break;
-		case Variant::CALLABLE: {
-		} break;
-		case Variant::SIGNAL: {
+			RID rid = p_variant;
+
+			if (buf) {
+				encode_uint64(rid.get_id(), buf);
+			}
+			r_len += 8;
 		} break;
 		case Variant::OBJECT: {
 			if (p_full_objects) {
@@ -1404,6 +1542,18 @@ Error encode_variant(const Variant &p_variant, uint8_t *r_buffer, int &r_len, bo
 			}
 
 		} break;
+		case Variant::CALLABLE: {
+		} break;
+		case Variant::SIGNAL: {
+			Signal signal = p_variant;
+
+			_encode_string(signal.get_name(), buf, r_len);
+
+			if (buf) {
+				encode_uint64(signal.get_object_id(), buf);
+			}
+			r_len += 8;
+		} break;
 		case Variant::DICTIONARY: {
 			Dictionary d = p_variant;
 
@@ -1417,19 +1567,6 @@ Error encode_variant(const Variant &p_variant, uint8_t *r_buffer, int &r_len, bo
 			d.get_key_list(&keys);
 
 			for (const Variant &E : keys) {
-				/*
-				CharString utf8 = E->->utf8();
-
-				if (buf) {
-					encode_uint32(utf8.length()+1,buf);
-					buf+=4;
-					memcpy(buf,utf8.get_data(),utf8.length()+1);
-				}
-
-				r_len+=4+utf8.length()+1;
-				while (r_len%4)
-					r_len++; //pad
-				*/
 				int len;
 				Error err = encode_variant(E, buf, len, p_full_objects, p_depth + 1);
 				ERR_FAIL_COND_V(err, err);
@@ -1675,4 +1812,25 @@ Error encode_variant(const Variant &p_variant, uint8_t *r_buffer, int &r_len, bo
 	}
 
 	return OK;
+}
+
+Vector<float> vector3_to_float32_array(const Vector3 *vecs, size_t count) {
+	// We always allocate a new array, and we don't memcpy.
+	// We also don't consider returning a pointer to the passed vectors when sizeof(real_t) == 4.
+	// One reason is that we could decide to put a 4th component in Vector3 for SIMD/mobile performance,
+	// which would cause trouble with these optimizations.
+	Vector<float> floats;
+	if (count == 0) {
+		return floats;
+	}
+	floats.resize(count * 3);
+	float *floats_w = floats.ptrw();
+	for (size_t i = 0; i < count; ++i) {
+		const Vector3 v = vecs[i];
+		floats_w[0] = v.x;
+		floats_w[1] = v.y;
+		floats_w[2] = v.z;
+		floats_w += 3;
+	}
+	return floats;
 }

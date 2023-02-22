@@ -1,52 +1,51 @@
-/*************************************************************************/
-/*  connections_dialog.h                                                 */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
-
-/**
-@author Juan Linietsky <reduzio@gmail.com>
-*/
+/**************************************************************************/
+/*  connections_dialog.h                                                  */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #ifndef CONNECTIONS_DIALOG_H
 #define CONNECTIONS_DIALOG_H
 
-#include "core/object/undo_redo.h"
 #include "editor/editor_inspector.h"
 #include "editor/scene_tree_editor.h"
 #include "scene/gui/button.h"
+#include "scene/gui/check_box.h"
 #include "scene/gui/check_button.h"
 #include "scene/gui/dialogs.h"
+#include "scene/gui/label.h"
 #include "scene/gui/line_edit.h"
 #include "scene/gui/menu_button.h"
+#include "scene/gui/option_button.h"
 #include "scene/gui/popup.h"
+#include "scene/gui/popup_menu.h"
+#include "scene/gui/spin_box.h"
 #include "scene/gui/tree.h"
 
-class PopupMenu;
 class ConnectDialogBinds;
 
 class ConnectDialog : public ConfirmationDialog {
@@ -59,54 +58,101 @@ public:
 		StringName signal;
 		StringName method;
 		uint32_t flags = 0;
+		int unbinds = 0;
 		Vector<Variant> binds;
 
-		ConnectionData() {
-		}
+		ConnectionData() {}
+
 		ConnectionData(const Connection &p_connection) {
 			source = Object::cast_to<Node>(p_connection.signal.get_object());
 			signal = p_connection.signal.get_name();
 			target = Object::cast_to<Node>(p_connection.callable.get_object());
-			method = p_connection.callable.get_method();
 			flags = p_connection.flags;
-			binds = p_connection.binds;
+
+			Callable base_callable;
+			if (p_connection.callable.is_custom()) {
+				CallableCustomBind *ccb = dynamic_cast<CallableCustomBind *>(p_connection.callable.get_custom());
+				if (ccb) {
+					binds = ccb->get_binds();
+					base_callable = ccb->get_callable();
+				}
+
+				CallableCustomUnbind *ccu = dynamic_cast<CallableCustomUnbind *>(p_connection.callable.get_custom());
+				if (ccu) {
+					unbinds = ccu->get_unbinds();
+					base_callable = ccu->get_callable();
+				}
+			} else {
+				base_callable = p_connection.callable;
+			}
+			method = base_callable.get_method();
 		}
-		operator Connection() {
-			Connection c;
-			c.signal = ::Signal(source, signal);
-			c.callable = Callable(target, method);
-			c.flags = flags;
-			c.binds = binds;
-			return c;
+
+		Callable get_callable() const {
+			if (unbinds > 0) {
+				return Callable(target, method).unbind(unbinds);
+			} else if (!binds.is_empty()) {
+				const Variant **argptrs = (const Variant **)alloca(sizeof(Variant *) * binds.size());
+				for (int i = 0; i < binds.size(); i++) {
+					argptrs[i] = &binds[i];
+				}
+				return Callable(target, method).bindp(argptrs, binds.size());
+			} else {
+				return Callable(target, method);
+			}
 		}
 	};
 
 private:
-	Label *connect_to_label;
-	LineEdit *from_signal;
-	Node *source;
+	Label *connect_to_label = nullptr;
+	LineEdit *from_signal = nullptr;
+	LineEdit *filter_nodes = nullptr;
+	Node *source = nullptr;
+	ConnectionData source_connection_data;
 	StringName signal;
-	LineEdit *dst_method;
-	ConnectDialogBinds *cdbinds;
-	bool bEditMode;
+	PackedStringArray signal_args;
+	LineEdit *dst_method = nullptr;
+	ConnectDialogBinds *cdbinds = nullptr;
+	bool edit_mode = false;
+	bool first_popup = true;
 	NodePath dst_path;
-	VBoxContainer *vbc_right;
+	VBoxContainer *vbc_right = nullptr;
+	SceneTreeEditor *tree = nullptr;
+	AcceptDialog *error = nullptr;
 
-	SceneTreeEditor *tree;
-	AcceptDialog *error;
-	EditorInspector *bind_editor;
-	OptionButton *type_list;
-	CheckBox *deferred;
-	CheckBox *oneshot;
-	CheckButton *advanced;
+	Button *open_method_tree = nullptr;
+	AcceptDialog *method_popup = nullptr;
+	Tree *method_tree = nullptr;
+	Label *empty_tree_label = nullptr;
+	LineEdit *method_search = nullptr;
+	CheckButton *script_methods_only = nullptr;
+	CheckButton *compatible_methods_only = nullptr;
 
-	Label *error_label;
+	SpinBox *unbind_count = nullptr;
+	EditorInspector *bind_editor = nullptr;
+	OptionButton *type_list = nullptr;
+	CheckBox *deferred = nullptr;
+	CheckBox *one_shot = nullptr;
+	CheckButton *advanced = nullptr;
+	Vector<Control *> bind_controls;
+
+	Label *error_label = nullptr;
 
 	void ok_pressed() override;
 	void _cancel_pressed();
 	void _item_activated();
-	void _text_submitted(const String &_text);
+	void _text_submitted(const String &p_text);
 	void _tree_node_selected();
+	void _focus_currently_connected();
+
+	void _method_selected();
+	void _create_method_tree_items(const List<MethodInfo> &p_methods, TreeItem *p_parent_item);
+	List<MethodInfo> _filter_method_list(const List<MethodInfo> &p_methods, const MethodInfo &p_signal, const String &p_search_string) const;
+	void _update_method_tree();
+	void _method_check_button_pressed(const CheckButton *p_button);
+	void _open_method_popup();
+
+	void _unbind_count_changed(double p_count);
 	void _add_bind();
 	void _remove_bind();
 	void _advanced_pressed();
@@ -117,21 +163,26 @@ protected:
 	static void _bind_methods();
 
 public:
+	static StringName generate_method_callback_name(Node *p_source, String p_signal_name, Node *p_target);
 	Node *get_source() const;
+	ConnectionData get_source_connection_data() const;
 	StringName get_signal_name() const;
+	PackedStringArray get_signal_args() const;
 	NodePath get_dst_path() const;
 	void set_dst_node(Node *p_node);
 	StringName get_dst_method_name() const;
 	void set_dst_method(const StringName &p_method);
+	int get_unbinds() const;
 	Vector<Variant> get_binds() const;
+	String get_signature(const MethodInfo &p_method, PackedStringArray *r_arg_names = nullptr);
 
 	bool get_deferred() const;
-	bool get_oneshot() const;
+	bool get_one_shot() const;
 	bool is_editing() const;
 
-	void init(ConnectionData c, bool bEdit = false);
+	void init(const ConnectionData &p_cd, const PackedStringArray &p_signal_args, bool p_edit = false);
 
-	void popup_dialog(const String &p_for_signal);
+	void popup_dialog(const String p_for_signal);
 	ConnectDialog();
 	~ConnectDialog();
 };
@@ -150,47 +201,49 @@ class ConnectionsDock : public VBoxContainer {
 	//Right-click Pop-up Menu Options.
 	enum SignalMenuOption {
 		CONNECT,
-		DISCONNECT_ALL
+		DISCONNECT_ALL,
+		COPY_NAME,
 	};
 
 	enum SlotMenuOption {
 		EDIT,
 		GO_TO_SCRIPT,
-		DISCONNECT
+		DISCONNECT,
 	};
 
-	Node *selectedNode;
-	ConnectionsDockTree *tree;
-	EditorNode *editor;
+	Node *selected_node = nullptr;
+	ConnectionsDockTree *tree = nullptr;
 
-	ConfirmationDialog *disconnect_all_dialog;
-	ConnectDialog *connect_dialog;
-	Button *connect_button;
-	PopupMenu *signal_menu;
-	PopupMenu *slot_menu;
-	UndoRedo *undo_redo;
-	LineEdit *search_box;
+	ConfirmationDialog *disconnect_all_dialog = nullptr;
+	ConnectDialog *connect_dialog = nullptr;
+	Button *connect_button = nullptr;
+	PopupMenu *signal_menu = nullptr;
+	PopupMenu *slot_menu = nullptr;
+	LineEdit *search_box = nullptr;
 
-	Map<StringName, Map<StringName, String>> descr_cache;
+	HashMap<StringName, HashMap<StringName, String>> descr_cache;
 
 	void _filter_changed(const String &p_text);
 
 	void _make_or_edit_connection();
-	void _connect(ConnectDialog::ConnectionData cToMake);
-	void _disconnect(TreeItem &item);
+	void _connect(const ConnectDialog::ConnectionData &p_cd);
+	void _disconnect(const ConnectDialog::ConnectionData &p_cd);
 	void _disconnect_all();
 
 	void _tree_item_selected();
 	void _tree_item_activated();
-	bool _is_item_signal(TreeItem &item);
+	bool _is_item_signal(TreeItem &p_item);
+	bool _is_connection_inherited(Connection &p_connection);
 
-	void _open_connection_dialog(TreeItem &item);
-	void _open_connection_dialog(ConnectDialog::ConnectionData cToEdit);
-	void _go_to_script(TreeItem &item);
+	void _open_connection_dialog(TreeItem &p_item);
+	void _open_edit_connection_dialog(TreeItem &p_item);
+	void _go_to_script(TreeItem &p_item);
 
-	void _handle_signal_menu_option(int option);
-	void _handle_slot_menu_option(int option);
-	void _rmb_pressed(Vector2 position);
+	void _handle_signal_menu_option(int p_option);
+	void _signal_menu_about_to_popup();
+	void _handle_slot_menu_option(int p_option);
+	void _slot_menu_about_to_popup();
+	void _rmb_pressed(Vector2 p_position, MouseButton p_button);
 	void _close();
 
 protected:
@@ -199,12 +252,11 @@ protected:
 	static void _bind_methods();
 
 public:
-	void set_undoredo(UndoRedo *p_undo_redo) { undo_redo = p_undo_redo; }
 	void set_node(Node *p_node);
 	void update_tree();
 
-	ConnectionsDock(EditorNode *p_editor = nullptr);
+	ConnectionsDock();
 	~ConnectionsDock();
 };
 
-#endif
+#endif // CONNECTIONS_DIALOG_H

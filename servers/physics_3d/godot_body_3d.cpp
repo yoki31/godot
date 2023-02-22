@@ -1,32 +1,32 @@
-/*************************************************************************/
-/*  godot_body_3d.cpp                                                    */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  godot_body_3d.cpp                                                     */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #include "godot_body_3d.h"
 
@@ -56,7 +56,7 @@ void GodotBody3D::update_mass_properties() {
 	// Update shapes and motions.
 
 	switch (mode) {
-		case PhysicsServer3D::BODY_MODE_DYNAMIC: {
+		case PhysicsServer3D::BODY_MODE_RIGID: {
 			real_t total_area = 0;
 			for (int i = 0; i < get_shape_count(); i++) {
 				if (is_shape_disabled(i)) {
@@ -78,10 +78,10 @@ void GodotBody3D::update_mass_properties() {
 
 						real_t area = get_shape_area(i);
 
-						real_t mass = area * this->mass / total_area;
+						real_t mass_new = area * mass / total_area;
 
 						// NOTE: we assume that the shape origin is also its center of mass.
-						center_of_mass_local += mass * get_shape_transform(i).origin;
+						center_of_mass_local += mass_new * get_shape_transform(i).origin;
 					}
 
 					center_of_mass_local /= mass;
@@ -108,9 +108,9 @@ void GodotBody3D::update_mass_properties() {
 
 					const GodotShape3D *shape = get_shape(i);
 
-					real_t mass = area * this->mass / total_area;
+					real_t mass_new = area * mass / total_area;
 
-					Basis shape_inertia_tensor = Basis::from_scale(shape->get_moment_of_inertia(mass));
+					Basis shape_inertia_tensor = Basis::from_scale(shape->get_moment_of_inertia(mass_new));
 					Transform3D shape_transform = get_shape_transform(i);
 					Basis shape_basis = shape_transform.basis.orthonormalized();
 
@@ -118,7 +118,7 @@ void GodotBody3D::update_mass_properties() {
 					shape_inertia_tensor = shape_basis * shape_inertia_tensor * shape_basis.transposed();
 
 					Vector3 shape_origin = shape_transform.origin - center_of_mass_local;
-					inertia_tensor += shape_inertia_tensor + (Basis() * shape_origin.dot(shape_origin) - shape_origin.outer(shape_origin)) * mass;
+					inertia_tensor += shape_inertia_tensor + (Basis() * shape_origin.dot(shape_origin) - shape_origin.outer(shape_origin)) * mass_new;
 				}
 
 				// Set the inertia to a valid value when there are no valid shapes.
@@ -154,7 +154,7 @@ void GodotBody3D::update_mass_properties() {
 			_inv_inertia = Vector3();
 			_inv_mass = 0;
 		} break;
-		case PhysicsServer3D::BODY_MODE_DYNAMIC_LINEAR: {
+		case PhysicsServer3D::BODY_MODE_RIGID_LINEAR: {
 			_inv_inertia_tensor.set_zero();
 			_inv_mass = 1.0 / mass;
 
@@ -201,7 +201,7 @@ void GodotBody3D::set_param(PhysicsServer3D::BodyParameter p_param, const Varian
 			real_t mass_value = p_value;
 			ERR_FAIL_COND(mass_value <= 0);
 			mass = mass_value;
-			if (mode >= PhysicsServer3D::BODY_MODE_DYNAMIC) {
+			if (mode >= PhysicsServer3D::BODY_MODE_RIGID) {
 				_mass_properties_changed();
 			}
 		} break;
@@ -209,12 +209,12 @@ void GodotBody3D::set_param(PhysicsServer3D::BodyParameter p_param, const Varian
 			inertia = p_value;
 			if ((inertia.x <= 0.0) || (inertia.y <= 0.0) || (inertia.z <= 0.0)) {
 				calculate_inertia = true;
-				if (mode == PhysicsServer3D::BODY_MODE_DYNAMIC) {
+				if (mode == PhysicsServer3D::BODY_MODE_RIGID) {
 					_mass_properties_changed();
 				}
 			} else {
 				calculate_inertia = false;
-				if (mode == PhysicsServer3D::BODY_MODE_DYNAMIC) {
+				if (mode == PhysicsServer3D::BODY_MODE_RIGID) {
 					principal_inertia_axes_local = Basis();
 					_inv_inertia = inertia.inverse();
 					_update_transform_dependent();
@@ -227,7 +227,18 @@ void GodotBody3D::set_param(PhysicsServer3D::BodyParameter p_param, const Varian
 			_update_transform_dependent();
 		} break;
 		case PhysicsServer3D::BODY_PARAM_GRAVITY_SCALE: {
+			if (Math::is_zero_approx(gravity_scale)) {
+				wakeup();
+			}
 			gravity_scale = p_value;
+		} break;
+		case PhysicsServer3D::BODY_PARAM_LINEAR_DAMP_MODE: {
+			int mode_value = p_value;
+			linear_damp_mode = (PhysicsServer3D::BodyDampMode)mode_value;
+		} break;
+		case PhysicsServer3D::BODY_PARAM_ANGULAR_DAMP_MODE: {
+			int mode_value = p_value;
+			angular_damp_mode = (PhysicsServer3D::BodyDampMode)mode_value;
 		} break;
 		case PhysicsServer3D::BODY_PARAM_LINEAR_DAMP: {
 			linear_damp = p_value;
@@ -252,18 +263,24 @@ Variant GodotBody3D::get_param(PhysicsServer3D::BodyParameter p_param) const {
 			return mass;
 		} break;
 		case PhysicsServer3D::BODY_PARAM_INERTIA: {
-			if (mode == PhysicsServer3D::BODY_MODE_DYNAMIC) {
+			if (mode == PhysicsServer3D::BODY_MODE_RIGID) {
 				return _inv_inertia.inverse();
 			} else {
 				return Vector3();
 			}
 		} break;
 		case PhysicsServer3D::BODY_PARAM_CENTER_OF_MASS: {
-			return center_of_mass;
+			return center_of_mass_local;
 		} break;
 		case PhysicsServer3D::BODY_PARAM_GRAVITY_SCALE: {
 			return gravity_scale;
 		} break;
+		case PhysicsServer3D::BODY_PARAM_LINEAR_DAMP_MODE: {
+			return linear_damp_mode;
+		}
+		case PhysicsServer3D::BODY_PARAM_ANGULAR_DAMP_MODE: {
+			return angular_damp_mode;
+		}
 		case PhysicsServer3D::BODY_PARAM_LINEAR_DAMP: {
 			return linear_damp;
 		} break;
@@ -298,7 +315,7 @@ void GodotBody3D::set_mode(PhysicsServer3D::BodyMode p_mode) {
 			_update_transform_dependent();
 
 		} break;
-		case PhysicsServer3D::BODY_MODE_DYNAMIC: {
+		case PhysicsServer3D::BODY_MODE_RIGID: {
 			_inv_mass = mass > 0 ? (1.0 / mass) : 0;
 			if (!calculate_inertia) {
 				principal_inertia_axes_local = Basis();
@@ -310,7 +327,7 @@ void GodotBody3D::set_mode(PhysicsServer3D::BodyMode p_mode) {
 			set_active(true);
 
 		} break;
-		case PhysicsServer3D::BODY_MODE_DYNAMIC_LINEAR: {
+		case PhysicsServer3D::BODY_MODE_RIGID_LINEAR: {
 			_inv_mass = mass > 0 ? (1.0 / mass) : 0;
 			_inv_inertia = Vector3();
 			angular_velocity = Vector3();
@@ -390,7 +407,7 @@ void GodotBody3D::set_state(PhysicsServer3D::BodyState p_state, const Variant &p
 		} break;
 		case PhysicsServer3D::BODY_STATE_CAN_SLEEP: {
 			can_sleep = p_variant;
-			if (mode >= PhysicsServer3D::BODY_MODE_DYNAMIC && !active && !can_sleep) {
+			if (mode >= PhysicsServer3D::BODY_MODE_RIGID && !active && !can_sleep) {
 				set_active(true);
 			}
 
@@ -443,15 +460,6 @@ void GodotBody3D::set_space(GodotSpace3D *p_space) {
 	}
 }
 
-void GodotBody3D::_compute_area_gravity_and_damping(const GodotArea3D *p_area) {
-	Vector3 area_gravity;
-	p_area->compute_gravity(get_transform().get_origin(), area_gravity);
-	gravity += area_gravity;
-
-	area_linear_damp += p_area->get_linear_damp();
-	area_angular_damp += p_area->get_angular_damp();
-}
-
 void GodotBody3D::set_axis_lock(PhysicsServer3D::BodyAxis p_axis, bool lock) {
 	if (lock) {
 		locked_axis |= p_axis;
@@ -469,63 +477,135 @@ void GodotBody3D::integrate_forces(real_t p_step) {
 		return;
 	}
 
-	GodotArea3D *def_area = get_space()->get_default_area();
-
-	ERR_FAIL_COND(!def_area);
+	ERR_FAIL_COND(!get_space());
 
 	int ac = areas.size();
+
+	bool gravity_done = false;
+	bool linear_damp_done = false;
+	bool angular_damp_done = false;
+
 	bool stopped = false;
+
 	gravity = Vector3(0, 0, 0);
-	area_linear_damp = 0;
-	area_angular_damp = 0;
+
+	total_linear_damp = 0.0;
+	total_angular_damp = 0.0;
+
+	// Combine gravity and damping from overlapping areas in priority order.
 	if (ac) {
 		areas.sort();
 		const AreaCMP *aa = &areas[0];
-		// damp_area = aa[ac-1].area;
 		for (int i = ac - 1; i >= 0 && !stopped; i--) {
-			PhysicsServer3D::AreaSpaceOverrideMode mode = aa[i].area->get_space_override_mode();
-			switch (mode) {
-				case PhysicsServer3D::AREA_SPACE_OVERRIDE_COMBINE:
-				case PhysicsServer3D::AREA_SPACE_OVERRIDE_COMBINE_REPLACE: {
-					_compute_area_gravity_and_damping(aa[i].area);
-					stopped = mode == PhysicsServer3D::AREA_SPACE_OVERRIDE_COMBINE_REPLACE;
-				} break;
-				case PhysicsServer3D::AREA_SPACE_OVERRIDE_REPLACE:
-				case PhysicsServer3D::AREA_SPACE_OVERRIDE_REPLACE_COMBINE: {
-					gravity = Vector3(0, 0, 0);
-					area_angular_damp = 0;
-					area_linear_damp = 0;
-					_compute_area_gravity_and_damping(aa[i].area);
-					stopped = mode == PhysicsServer3D::AREA_SPACE_OVERRIDE_REPLACE;
-				} break;
-				default: {
+			if (!gravity_done) {
+				PhysicsServer3D::AreaSpaceOverrideMode area_gravity_mode = (PhysicsServer3D::AreaSpaceOverrideMode)(int)aa[i].area->get_param(PhysicsServer3D::AREA_PARAM_GRAVITY_OVERRIDE_MODE);
+				if (area_gravity_mode != PhysicsServer3D::AREA_SPACE_OVERRIDE_DISABLED) {
+					Vector3 area_gravity;
+					aa[i].area->compute_gravity(get_transform().get_origin(), area_gravity);
+					switch (area_gravity_mode) {
+						case PhysicsServer3D::AREA_SPACE_OVERRIDE_COMBINE:
+						case PhysicsServer3D::AREA_SPACE_OVERRIDE_COMBINE_REPLACE: {
+							gravity += area_gravity;
+							gravity_done = area_gravity_mode == PhysicsServer3D::AREA_SPACE_OVERRIDE_COMBINE_REPLACE;
+						} break;
+						case PhysicsServer3D::AREA_SPACE_OVERRIDE_REPLACE:
+						case PhysicsServer3D::AREA_SPACE_OVERRIDE_REPLACE_COMBINE: {
+							gravity = area_gravity;
+							gravity_done = area_gravity_mode == PhysicsServer3D::AREA_SPACE_OVERRIDE_REPLACE;
+						} break;
+						default: {
+						}
+					}
 				}
 			}
+			if (!linear_damp_done) {
+				PhysicsServer3D::AreaSpaceOverrideMode area_linear_damp_mode = (PhysicsServer3D::AreaSpaceOverrideMode)(int)aa[i].area->get_param(PhysicsServer3D::AREA_PARAM_LINEAR_DAMP_OVERRIDE_MODE);
+				if (area_linear_damp_mode != PhysicsServer3D::AREA_SPACE_OVERRIDE_DISABLED) {
+					real_t area_linear_damp = aa[i].area->get_linear_damp();
+					switch (area_linear_damp_mode) {
+						case PhysicsServer3D::AREA_SPACE_OVERRIDE_COMBINE:
+						case PhysicsServer3D::AREA_SPACE_OVERRIDE_COMBINE_REPLACE: {
+							total_linear_damp += area_linear_damp;
+							linear_damp_done = area_linear_damp_mode == PhysicsServer3D::AREA_SPACE_OVERRIDE_COMBINE_REPLACE;
+						} break;
+						case PhysicsServer3D::AREA_SPACE_OVERRIDE_REPLACE:
+						case PhysicsServer3D::AREA_SPACE_OVERRIDE_REPLACE_COMBINE: {
+							total_linear_damp = area_linear_damp;
+							linear_damp_done = area_linear_damp_mode == PhysicsServer3D::AREA_SPACE_OVERRIDE_REPLACE;
+						} break;
+						default: {
+						}
+					}
+				}
+			}
+			if (!angular_damp_done) {
+				PhysicsServer3D::AreaSpaceOverrideMode area_angular_damp_mode = (PhysicsServer3D::AreaSpaceOverrideMode)(int)aa[i].area->get_param(PhysicsServer3D::AREA_PARAM_ANGULAR_DAMP_OVERRIDE_MODE);
+				if (area_angular_damp_mode != PhysicsServer3D::AREA_SPACE_OVERRIDE_DISABLED) {
+					real_t area_angular_damp = aa[i].area->get_angular_damp();
+					switch (area_angular_damp_mode) {
+						case PhysicsServer3D::AREA_SPACE_OVERRIDE_COMBINE:
+						case PhysicsServer3D::AREA_SPACE_OVERRIDE_COMBINE_REPLACE: {
+							total_angular_damp += area_angular_damp;
+							angular_damp_done = area_angular_damp_mode == PhysicsServer3D::AREA_SPACE_OVERRIDE_COMBINE_REPLACE;
+						} break;
+						case PhysicsServer3D::AREA_SPACE_OVERRIDE_REPLACE:
+						case PhysicsServer3D::AREA_SPACE_OVERRIDE_REPLACE_COMBINE: {
+							total_angular_damp = area_angular_damp;
+							angular_damp_done = area_angular_damp_mode == PhysicsServer3D::AREA_SPACE_OVERRIDE_REPLACE;
+						} break;
+						default: {
+						}
+					}
+				}
+			}
+			stopped = gravity_done && linear_damp_done && angular_damp_done;
 		}
 	}
 
+	// Add default gravity and damping from space area.
 	if (!stopped) {
-		_compute_area_gravity_and_damping(def_area);
+		GodotArea3D *default_area = get_space()->get_default_area();
+		ERR_FAIL_COND(!default_area);
+
+		if (!gravity_done) {
+			Vector3 default_gravity;
+			default_area->compute_gravity(get_transform().get_origin(), default_gravity);
+			gravity += default_gravity;
+		}
+
+		if (!linear_damp_done) {
+			total_linear_damp += default_area->get_linear_damp();
+		}
+
+		if (!angular_damp_done) {
+			total_angular_damp += default_area->get_angular_damp();
+		}
+	}
+
+	// Override linear damping with body's value.
+	switch (linear_damp_mode) {
+		case PhysicsServer3D::BODY_DAMP_MODE_COMBINE: {
+			total_linear_damp += linear_damp;
+		} break;
+		case PhysicsServer3D::BODY_DAMP_MODE_REPLACE: {
+			total_linear_damp = linear_damp;
+		} break;
+	}
+
+	// Override angular damping with body's value.
+	switch (angular_damp_mode) {
+		case PhysicsServer3D::BODY_DAMP_MODE_COMBINE: {
+			total_angular_damp += angular_damp;
+		} break;
+		case PhysicsServer3D::BODY_DAMP_MODE_REPLACE: {
+			total_angular_damp = angular_damp;
+		} break;
 	}
 
 	gravity *= gravity_scale;
 
-	// If less than 0, override dampenings with that of the Body
-	if (angular_damp >= 0) {
-		area_angular_damp = angular_damp;
-	}
-	/*
-	else
-		area_angular_damp=damp_area->get_angular_damp();
-	*/
-
-	if (linear_damp >= 0) {
-		area_linear_damp = linear_damp;
-	}
-	/*
-	else
-		area_linear_damp=damp_area->get_linear_damp();
-	*/
+	prev_linear_velocity = linear_velocity;
+	prev_angular_velocity = angular_velocity;
 
 	Vector3 motion;
 	bool do_motion = false;
@@ -548,24 +628,23 @@ void GodotBody3D::integrate_forces(real_t p_step) {
 		if (!omit_force_integration) {
 			//overridden by direct state query
 
-			Vector3 force = gravity * mass;
-			force += applied_force;
-			Vector3 torque = applied_torque;
+			Vector3 force = gravity * mass + applied_force + constant_force;
+			Vector3 torque = applied_torque + constant_torque;
 
-			real_t damp = 1.0 - p_step * area_linear_damp;
+			real_t damp = 1.0 - p_step * total_linear_damp;
 
 			if (damp < 0) { // reached zero in the given time
 				damp = 0;
 			}
 
-			real_t angular_damp = 1.0 - p_step * area_angular_damp;
+			real_t angular_damp_new = 1.0 - p_step * total_angular_damp;
 
-			if (angular_damp < 0) { // reached zero in the given time
-				angular_damp = 0;
+			if (angular_damp_new < 0) { // reached zero in the given time
+				angular_damp_new = 0;
 			}
 
 			linear_velocity *= damp;
-			angular_velocity *= angular_damp;
+			angular_velocity *= angular_damp_new;
 
 			linear_velocity += _inv_mass * force * p_step;
 			angular_velocity += _inv_inertia_tensor.xform(torque) * p_step;
@@ -580,8 +659,6 @@ void GodotBody3D::integrate_forces(real_t p_step) {
 	applied_force = Vector3();
 	applied_torque = Vector3();
 
-	//motion=linear_velocity*p_step;
-
 	biased_angular_velocity = Vector3();
 	biased_linear_velocity = Vector3();
 
@@ -589,7 +666,6 @@ void GodotBody3D::integrate_forces(real_t p_step) {
 		_update_shapes_with_motion(motion);
 	}
 
-	def_area = nullptr; // clear the area, so it is set in the next frame
 	contact_count = 0;
 }
 
@@ -598,7 +674,7 @@ void GodotBody3D::integrate_velocities(real_t p_step) {
 		return;
 	}
 
-	if (fi_callback_data || body_state_callback) {
+	if (fi_callback_data || body_state_callback.get_object()) {
 		get_space()->body_add_to_state_query_list(&direct_state_query_list);
 	}
 
@@ -631,27 +707,27 @@ void GodotBody3D::integrate_velocities(real_t p_step) {
 	Vector3 total_angular_velocity = angular_velocity + biased_angular_velocity;
 
 	real_t ang_vel = total_angular_velocity.length();
-	Transform3D transform = get_transform();
+	Transform3D transform_new = get_transform();
 
 	if (!Math::is_zero_approx(ang_vel)) {
 		Vector3 ang_vel_axis = total_angular_velocity / ang_vel;
 		Basis rot(ang_vel_axis, ang_vel * p_step);
 		Basis identity3(1, 0, 0, 0, 1, 0, 0, 0, 1);
-		transform.origin += ((identity3 - rot) * transform.basis).xform(center_of_mass_local);
-		transform.basis = rot * transform.basis;
-		transform.orthonormalize();
+		transform_new.origin += ((identity3 - rot) * transform_new.basis).xform(center_of_mass_local);
+		transform_new.basis = rot * transform_new.basis;
+		transform_new.orthonormalize();
 	}
 
 	Vector3 total_linear_velocity = linear_velocity + biased_linear_velocity;
 	/*for(int i=0;i<3;i++) {
 		if (axis_lock&(1<<i)) {
-			transform.origin[i]=0.0;
+			transform_new.origin[i]=0.0;
 		}
 	}*/
 
-	transform.origin += total_linear_velocity * p_step;
+	transform_new.origin += total_linear_velocity * p_step;
 
-	_set_transform(transform);
+	_set_transform(transform_new);
 	_set_inv_transform(get_transform().inverse());
 
 	_update_transform_dependent();
@@ -668,7 +744,7 @@ void GodotBody3D::wakeup_neighbours() {
 				continue;
 			}
 			GodotBody3D *b = n[i];
-			if (b->mode < PhysicsServer3D::BODY_MODE_DYNAMIC) {
+			if (b->mode < PhysicsServer3D::BODY_MODE_RIGID) {
 				continue;
 			}
 
@@ -680,22 +756,26 @@ void GodotBody3D::wakeup_neighbours() {
 }
 
 void GodotBody3D::call_queries() {
+	Variant direct_state_variant = get_direct_state();
+
 	if (fi_callback_data) {
 		if (!fi_callback_data->callable.get_object()) {
 			set_force_integration_callback(Callable());
 		} else {
-			Variant direct_state_variant = get_direct_state();
 			const Variant *vp[2] = { &direct_state_variant, &fi_callback_data->udata };
 
 			Callable::CallError ce;
 			int argc = (fi_callback_data->udata.get_type() == Variant::NIL) ? 1 : 2;
 			Variant rv;
-			fi_callback_data->callable.call(vp, argc, rv, ce);
+			fi_callback_data->callable.callp(vp, argc, rv, ce);
 		}
 	}
 
-	if (body_state_callback_instance) {
-		(body_state_callback)(body_state_callback_instance, get_direct_state());
+	if (body_state_callback.get_object()) {
+		const Variant *vp[1] = { &direct_state_variant };
+		Callable::CallError ce;
+		Variant rv;
+		body_state_callback.callp(vp, 1, rv, ce);
 	}
 }
 
@@ -716,9 +796,8 @@ bool GodotBody3D::sleep_test(real_t p_step) {
 	}
 }
 
-void GodotBody3D::set_state_sync_callback(void *p_instance, PhysicsServer3D::BodyStateCallback p_callback) {
-	body_state_callback_instance = p_instance;
-	body_state_callback = p_callback;
+void GodotBody3D::set_state_sync_callback(const Callable &p_callable) {
+	body_state_callback = p_callable;
 }
 
 void GodotBody3D::set_force_integration_callback(const Callable &p_callable, const Variant &p_udata) {

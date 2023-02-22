@@ -1,32 +1,32 @@
-/*************************************************************************/
-/*  app_uwp.cpp                                                          */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  app_uwp.cpp                                                           */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 //
 // This file demonstrates how to initialize EGL in a Windows Store app, using ICoreWindow.
@@ -121,8 +121,7 @@ void App::SetWindow(CoreWindow ^ p_window) {
 	window->PointerWheelChanged +=
 			ref new TypedEventHandler<CoreWindow ^, PointerEventArgs ^>(this, &App::OnPointerWheelChanged);
 
-	mouseChangedNotifier = SignalNotifier::AttachToEvent(L"os_mouse_mode_changed", ref new SignalHandler(
-																						   this, &App::OnMouseModeChanged));
+	mouseChangedNotifier = SignalNotifier::AttachToEvent(L"os_mouse_mode_changed", ref new SignalHandler(this, &App::OnMouseModeChanged));
 
 	mouseChangedNotifier->Enable();
 
@@ -178,7 +177,7 @@ static MouseButton _get_button(Windows::UI::Input::PointerPoint ^ pt) {
 #endif
 
 	return MOUSE_BUTTON_NONE;
-};
+}
 
 static bool _is_touch(Windows::UI::Input::PointerPoint ^ pointerPoint) {
 #if WINAPI_FAMILY == WINAPI_FAMILY_PHONE_APP
@@ -232,11 +231,11 @@ static Windows::Foundation::Point _get_pixel_position(CoreWindow ^ window, Windo
 	outputPosition.Y *= vm.height;
 
 	return outputPosition;
-};
+}
 
 static int _get_finger(uint32_t p_touch_id) {
 	return p_touch_id % 31; // for now
-};
+}
 
 void App::pointer_event(Windows::UI::Core::CoreWindow ^ sender, Windows::UI::Core::PointerEventArgs ^ args, bool p_pressed, bool p_is_wheel) {
 	Windows::UI::Input::PointerPoint ^ point = args->CurrentPoint;
@@ -282,15 +281,15 @@ void App::pointer_event(Windows::UI::Core::CoreWindow ^ sender, Windows::UI::Cor
 			os->input_event(mouse_button);
 		}
 	}
-};
+}
 
 void App::OnPointerPressed(Windows::UI::Core::CoreWindow ^ sender, Windows::UI::Core::PointerEventArgs ^ args) {
 	pointer_event(sender, args, true);
-};
+}
 
 void App::OnPointerReleased(Windows::UI::Core::CoreWindow ^ sender, Windows::UI::Core::PointerEventArgs ^ args) {
 	pointer_event(sender, args, false);
-};
+}
 
 void App::OnPointerWheelChanged(Windows::UI::Core::CoreWindow ^ sender, Windows::UI::Core::PointerEventArgs ^ args) {
 	pointer_event(sender, args, true, true);
@@ -417,8 +416,9 @@ void App::Load(Platform::String ^ entryPoint) {
 
 // This method is called after the window becomes active.
 void App::Run() {
-	if (Main::start())
+	if (Main::start()) {
 		os->run();
+	}
 }
 
 // Terminate events do not cause Uninitialize to be called. It will be called if your IFrameworkView

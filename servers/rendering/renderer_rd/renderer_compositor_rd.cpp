@@ -1,32 +1,32 @@
-/*************************************************************************/
-/*  renderer_compositor_rd.cpp                                           */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  renderer_compositor_rd.cpp                                            */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #include "renderer_compositor_rd.h"
 
@@ -39,22 +39,21 @@ void RendererCompositorRD::prepare_for_blitting_render_targets() {
 
 void RendererCompositorRD::blit_render_targets_to_screen(DisplayServer::WindowID p_screen, const BlitToScreen *p_render_targets, int p_amount) {
 	RD::DrawListID draw_list = RD::get_singleton()->draw_list_begin_for_screen(p_screen);
+	if (draw_list == RD::INVALID_ID) {
+		return; // Window is minimized and does not have valid swapchain, skip drawing without printing errors.
+	}
 
 	for (int i = 0; i < p_amount; i++) {
-		RID texture = storage->render_target_get_texture(p_render_targets[i].render_target);
-		ERR_CONTINUE(texture.is_null());
-		RID rd_texture = storage->texture_get_rd_texture(texture);
+		RID rd_texture = texture_storage->render_target_get_rd_texture(p_render_targets[i].render_target);
 		ERR_CONTINUE(rd_texture.is_null());
-
-		// TODO if keep_3d_linear was set when rendering to this render target we need to add a linear->sRGB conversion in.
 
 		if (!render_target_descriptors.has(rd_texture) || !RD::get_singleton()->uniform_set_is_valid(render_target_descriptors[rd_texture])) {
 			Vector<RD::Uniform> uniforms;
 			RD::Uniform u;
 			u.uniform_type = RD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE;
 			u.binding = 0;
-			u.ids.push_back(blit.sampler);
-			u.ids.push_back(rd_texture);
+			u.append_id(blit.sampler);
+			u.append_id(rd_texture);
 			uniforms.push_back(u);
 			RID uniform_set = RD::get_singleton()->uniform_set_create(uniforms, blit.shader.version_get_shader(blit.shader_version, BLIT_MODE_NORMAL), 0);
 
@@ -103,10 +102,8 @@ void RendererCompositorRD::begin_frame(double frame_step) {
 }
 
 void RendererCompositorRD::end_frame(bool p_swap_buffers) {
-#ifndef _MSC_VER
-#warning TODO: likely pass a bool to swap buffers to avoid display?
-#endif
-	RD::get_singleton()->swap_buffers(); //probably should pass some bool to avoid display?
+	// TODO: Likely pass a bool to swap buffers to avoid display?
+	RD::get_singleton()->swap_buffers();
 }
 
 void RendererCompositorRD::initialize() {
@@ -151,7 +148,14 @@ uint64_t RendererCompositorRD::frame = 1;
 void RendererCompositorRD::finalize() {
 	memdelete(scene);
 	memdelete(canvas);
-	memdelete(storage);
+	memdelete(effects);
+	memdelete(fog);
+	memdelete(particles_storage);
+	memdelete(light_storage);
+	memdelete(mesh_storage);
+	memdelete(material_storage);
+	memdelete(texture_storage);
+	memdelete(utilities);
 
 	//only need to erase these, the rest are erased by cascade
 	blit.shader.version_free(blit.shader_version);
@@ -160,11 +164,21 @@ void RendererCompositorRD::finalize() {
 }
 
 void RendererCompositorRD::set_boot_image(const Ref<Image> &p_image, const Color &p_color, bool p_scale, bool p_use_filter) {
+	if (p_image.is_null() || p_image->is_empty()) {
+		return;
+	}
+
 	RD::get_singleton()->prepare_screen_for_drawing();
 
-	RID texture = storage->texture_allocate();
-	storage->texture_2d_initialize(texture, p_image);
-	RID rd_texture = storage->texture_get_rd_texture(texture);
+	RID texture = texture_storage->texture_allocate();
+	texture_storage->texture_2d_initialize(texture, p_image);
+	RID rd_texture = texture_storage->texture_get_rd_texture(texture);
+
+	RD::SamplerState sampler_state;
+	sampler_state.min_filter = p_use_filter ? RD::SAMPLER_FILTER_LINEAR : RD::SAMPLER_FILTER_NEAREST;
+	sampler_state.mag_filter = p_use_filter ? RD::SAMPLER_FILTER_LINEAR : RD::SAMPLER_FILTER_NEAREST;
+	sampler_state.max_lod = 0;
+	RID sampler = RD::get_singleton()->sampler_create(sampler_state);
 
 	RID uset;
 	{
@@ -172,8 +186,8 @@ void RendererCompositorRD::set_boot_image(const Ref<Image> &p_image, const Color
 		RD::Uniform u;
 		u.uniform_type = RD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE;
 		u.binding = 0;
-		u.ids.push_back(blit.sampler);
-		u.ids.push_back(rd_texture);
+		u.append_id(sampler);
+		u.append_id(rd_texture);
 		uniforms.push_back(u);
 		uset = RD::get_singleton()->uniform_set_create(uniforms, blit.shader.version_get_shader(blit.shader_version, BLIT_MODE_NORMAL), 0);
 	}
@@ -232,19 +246,23 @@ void RendererCompositorRD::set_boot_image(const Ref<Image> &p_image, const Color
 
 	RD::get_singleton()->swap_buffers();
 
-	storage->free(texture);
+	texture_storage->texture_free(texture);
+	RD::get_singleton()->free(sampler);
 }
 
 RendererCompositorRD *RendererCompositorRD::singleton = nullptr;
 
 RendererCompositorRD::RendererCompositorRD() {
+	uniform_set_cache = memnew(UniformSetCacheRD);
+	framebuffer_cache = memnew(FramebufferCacheRD);
+
 	{
 		String shader_cache_dir = Engine::get_singleton()->get_shader_cache_path();
-		if (shader_cache_dir == String()) {
+		if (shader_cache_dir.is_empty()) {
 			shader_cache_dir = "user://";
 		}
-		DirAccessRef da = DirAccess::open(shader_cache_dir);
-		if (!da) {
+		Ref<DirAccess> da = DirAccess::open(shader_cache_dir);
+		if (da.is_null()) {
 			ERR_PRINT("Can't create shader cache folder, no shader caching will happen: " + shader_cache_dir);
 		} else {
 			Error err = da->change_dir("shader_cache");
@@ -254,14 +272,14 @@ RendererCompositorRD::RendererCompositorRD() {
 			if (err != OK) {
 				ERR_PRINT("Can't create shader cache folder, no shader caching will happen: " + shader_cache_dir);
 			} else {
-				shader_cache_dir = shader_cache_dir.plus_file("shader_cache");
+				shader_cache_dir = shader_cache_dir.path_join("shader_cache");
 
 				bool shader_cache_enabled = GLOBAL_GET("rendering/shader_compiler/shader_cache/enabled");
 				if (!Engine::get_singleton()->is_editor_hint() && !shader_cache_enabled) {
 					shader_cache_dir = String(); //disable only if not editor
 				}
 
-				if (shader_cache_dir != String()) {
+				if (!shader_cache_dir.is_empty()) {
 					bool compress = GLOBAL_GET("rendering/shader_compiler/shader_cache/compress");
 					bool use_zstd = GLOBAL_GET("rendering/shader_compiler/shader_cache/use_zstd_compression");
 					bool strip_debug = GLOBAL_GET("rendering/shader_compiler/shader_cache/strip_debug");
@@ -276,27 +294,39 @@ RendererCompositorRD::RendererCompositorRD() {
 	}
 
 	singleton = this;
-	time = 0;
 
-	storage = memnew(RendererStorageRD);
-	canvas = memnew(RendererCanvasRenderRD(storage));
+	utilities = memnew(RendererRD::Utilities);
+	texture_storage = memnew(RendererRD::TextureStorage);
+	material_storage = memnew(RendererRD::MaterialStorage);
+	mesh_storage = memnew(RendererRD::MeshStorage);
+	light_storage = memnew(RendererRD::LightStorage);
+	particles_storage = memnew(RendererRD::ParticlesStorage);
+	fog = memnew(RendererRD::Fog);
+	canvas = memnew(RendererCanvasRenderRD());
 
-	uint32_t back_end = GLOBAL_GET("rendering/vulkan/rendering/back_end");
-	uint32_t textures_per_stage = RD::get_singleton()->limit_get(RD::LIMIT_MAX_TEXTURES_PER_SHADER_STAGE);
+	String rendering_method = GLOBAL_GET("rendering/renderer/rendering_method");
+	uint64_t textures_per_stage = RD::get_singleton()->limit_get(RD::LIMIT_MAX_TEXTURES_PER_SHADER_STAGE);
 
-	if (back_end == 1 || textures_per_stage < 48) {
-		scene = memnew(RendererSceneRenderImplementation::RenderForwardMobile(storage));
-	} else { // back_end == 0
+	if (rendering_method == "mobile" || textures_per_stage < 48) {
+		scene = memnew(RendererSceneRenderImplementation::RenderForwardMobile());
+		if (rendering_method == "forward_plus") {
+			WARN_PRINT_ONCE("Platform supports less than 48 textures per stage which is less than required by the Clustered renderer. Defaulting to Mobile renderer.");
+		}
+	} else if (rendering_method == "forward_plus") {
 		// default to our high end renderer
-		scene = memnew(RendererSceneRenderImplementation::RenderForwardClustered(storage));
+		scene = memnew(RendererSceneRenderImplementation::RenderForwardClustered());
+	} else {
+		ERR_FAIL_MSG("Cannot instantiate RenderingDevice-based renderer with renderer type " + rendering_method);
 	}
 
 	scene->init();
 
 	// now we're ready to create our effects,
-	storage->init_effects(!scene->_render_buffers_can_be_storage());
+	effects = memnew(EffectsRD(!scene->_render_buffers_can_be_storage()));
 }
 
 RendererCompositorRD::~RendererCompositorRD() {
+	memdelete(uniform_set_cache);
+	memdelete(framebuffer_cache);
 	ShaderRD::set_shader_cache_dir(String());
 }

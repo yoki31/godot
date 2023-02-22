@@ -1,53 +1,53 @@
-/*************************************************************************/
-/*  pot_generator.cpp                                                    */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  pot_generator.cpp                                                     */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #include "pot_generator.h"
 
 #include "core/config/project_settings.h"
 #include "core/error/error_macros.h"
-#include "editor_translation_parser.h"
+#include "editor/editor_translation_parser.h"
 #include "plugins/packed_scene_translation_parser_plugin.h"
 
 POTGenerator *POTGenerator::singleton = nullptr;
 
 #ifdef DEBUG_POT
 void POTGenerator::_print_all_translation_strings() {
-	for (OrderedHashMap<String, Vector<POTGenerator::MsgidData>>::Element E = all_translation_strings.front(); E; E = E.next()) {
+	for (HashMap<String, Vector<POTGenerator::MsgidData>>::Element E = all_translation_strings.front(); E; E = E.next()) {
 		Vector<MsgidData> v_md = all_translation_strings[E.key()];
 		for (int i = 0; i < v_md.size(); i++) {
 			print_line("++++++");
 			print_line("msgid: " + E.key());
 			print_line("context: " + v_md[i].ctx);
 			print_line("msgid_plural: " + v_md[i].plural);
-			for (Set<String>::Element *E = v_md[i].locations.front(); E; E = E->next()) {
-				print_line("location: " + E->get());
+			for (const String &F : v_md[i].locations) {
+				print_line("location: " + F);
 			}
 		}
 	}
@@ -63,7 +63,7 @@ void POTGenerator::generate_pot(const String &p_file) {
 	// Clear all_translation_strings of the previous round.
 	all_translation_strings.clear();
 
-	Vector<String> files = ProjectSettings::get_singleton()->get("internationalization/locale/translations_pot_files");
+	Vector<String> files = GLOBAL_GET("internationalization/locale/translations_pot_files");
 
 	// Collect all translatable strings according to files order in "POT Generation" setting.
 	for (int i = 0; i < files.size(); i++) {
@@ -93,14 +93,14 @@ void POTGenerator::generate_pot(const String &p_file) {
 
 void POTGenerator::_write_to_pot(const String &p_file) {
 	Error err;
-	FileAccess *file = FileAccess::open(p_file, FileAccess::WRITE, &err);
+	Ref<FileAccess> file = FileAccess::open(p_file, FileAccess::WRITE, &err);
 	if (err != OK) {
 		ERR_PRINT("Failed to open " + p_file);
 		return;
 	}
 
-	String project_name = ProjectSettings::get_singleton()->get("application/config/name");
-	Vector<String> files = ProjectSettings::get_singleton()->get("internationalization/locale/translations_pot_files");
+	String project_name = GLOBAL_GET("application/config/name");
+	Vector<String> files = GLOBAL_GET("internationalization/locale/translations_pot_files");
 	String extracted_files = "";
 	for (int i = 0; i < files.size(); i++) {
 		extracted_files += "# " + files[i] + "\n";
@@ -121,20 +121,20 @@ void POTGenerator::_write_to_pot(const String &p_file) {
 
 	file->store_string(header);
 
-	for (OrderedHashMap<String, Vector<MsgidData>>::Element E_pair = all_translation_strings.front(); E_pair; E_pair = E_pair.next()) {
-		String msgid = E_pair.key();
-		Vector<MsgidData> v_msgid_data = E_pair.value();
+	for (const KeyValue<String, Vector<MsgidData>> &E_pair : all_translation_strings) {
+		String msgid = E_pair.key;
+		const Vector<MsgidData> &v_msgid_data = E_pair.value;
 		for (int i = 0; i < v_msgid_data.size(); i++) {
 			String context = v_msgid_data[i].ctx;
 			String plural = v_msgid_data[i].plural;
-			const Set<String> &locations = v_msgid_data[i].locations;
+			const HashSet<String> &locations = v_msgid_data[i].locations;
 
 			// Put the blank line at the start, to avoid a double at the end when closing the file.
 			file->store_line("");
 
 			// Write file locations.
-			for (Set<String>::Element *E = locations.front(); E; E = E->next()) {
-				file->store_line("#: " + E->get().trim_prefix("res://"));
+			for (const String &E : locations) {
+				file->store_line("#: " + E.trim_prefix("res://"));
 			}
 
 			// Write context.
@@ -155,26 +155,29 @@ void POTGenerator::_write_to_pot(const String &p_file) {
 			}
 		}
 	}
-
-	file->close();
 }
 
-void POTGenerator::_write_msgid(FileAccess *r_file, const String &p_id, bool p_plural) {
+void POTGenerator::_write_msgid(Ref<FileAccess> r_file, const String &p_id, bool p_plural) {
 	// Split \\n and \n.
-	Vector<String> temp = p_id.split("\\n");
 	Vector<String> msg_lines;
+	Vector<String> temp = p_id.split("\\n");
 	for (int i = 0; i < temp.size(); i++) {
 		msg_lines.append_array(temp[i].split("\n"));
-		if (i < temp.size() - 1) {
-			// Add \n.
-			msg_lines.set(msg_lines.size() - 1, msg_lines[msg_lines.size() - 1] + "\\n");
-		}
+	}
+
+	// Add \n.
+	for (int i = 0; i < msg_lines.size() - 1; i++) {
+		msg_lines.set(i, msg_lines[i] + "\\n");
 	}
 
 	if (p_plural) {
 		r_file->store_string("msgid_plural ");
 	} else {
 		r_file->store_string("msgid ");
+	}
+
+	if (msg_lines.size() > 1) {
+		r_file->store_line("\"\"");
 	}
 
 	for (int i = 0; i < msg_lines.size(); i++) {

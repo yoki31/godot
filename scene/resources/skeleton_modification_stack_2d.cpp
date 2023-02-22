@@ -1,32 +1,32 @@
-/*************************************************************************/
-/*  skeleton_modification_stack_2d.cpp                                   */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  skeleton_modification_stack_2d.cpp                                    */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #include "skeleton_modification_stack_2d.h"
 #include "scene/2d/skeleton_2d.h"
@@ -37,7 +37,7 @@ void SkeletonModificationStack2D::_get_property_list(List<PropertyInfo> *p_list)
 				PropertyInfo(Variant::OBJECT, "modifications/" + itos(i),
 						PROPERTY_HINT_RESOURCE_TYPE,
 						"SkeletonModification2D",
-						PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_DEFERRED_SET_RESOURCE | PROPERTY_USAGE_DO_NOT_SHARE_ON_DUPLICATE));
+						PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_DEFERRED_SET_RESOURCE | PROPERTY_USAGE_ALWAYS_DUPLICATE));
 	}
 }
 
@@ -138,7 +138,7 @@ void SkeletonModificationStack2D::set_editor_gizmos_dirty(bool p_dirty) {
 	if (!editor_gizmo_dirty && p_dirty) {
 		editor_gizmo_dirty = p_dirty;
 		if (skeleton) {
-			skeleton->update();
+			skeleton->queue_redraw();
 		}
 	} else {
 		editor_gizmo_dirty = p_dirty;
@@ -172,7 +172,7 @@ void SkeletonModificationStack2D::add_modification(Ref<SkeletonModification2D> p
 
 void SkeletonModificationStack2D::delete_modification(int p_mod_idx) {
 	ERR_FAIL_INDEX(p_mod_idx, modifications.size());
-	modifications.remove(p_mod_idx);
+	modifications.remove_at(p_mod_idx);
 
 #ifdef TOOLS_ENABLED
 	set_editor_gizmos_dirty(true);
@@ -182,11 +182,11 @@ void SkeletonModificationStack2D::delete_modification(int p_mod_idx) {
 void SkeletonModificationStack2D::set_modification(int p_mod_idx, Ref<SkeletonModification2D> p_mod) {
 	ERR_FAIL_INDEX(p_mod_idx, modifications.size());
 
-	if (p_mod == nullptr) {
-		modifications.insert(p_mod_idx, nullptr);
+	if (p_mod.is_null()) {
+		modifications.write[p_mod_idx] = Ref<SkeletonModification2D>();
 	} else {
+		modifications.write[p_mod_idx] = p_mod;
 		p_mod->_setup_modification(this);
-		modifications.insert(p_mod_idx, p_mod);
 	}
 
 #ifdef TOOLS_ENABLED
@@ -195,6 +195,7 @@ void SkeletonModificationStack2D::set_modification(int p_mod_idx, Ref<SkeletonMo
 }
 
 void SkeletonModificationStack2D::set_modification_count(int p_count) {
+	ERR_FAIL_COND_MSG(p_count < 0, "Modification count cannot be less than zero.");
 	modifications.resize(p_count);
 	notify_property_list_changed();
 
@@ -262,7 +263,7 @@ void SkeletonModificationStack2D::_bind_methods() {
 
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "enabled"), "set_enabled", "get_enabled");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "strength", PROPERTY_HINT_RANGE, "0, 1, 0.001"), "set_strength", "get_strength");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "modification_count", PROPERTY_HINT_RANGE, "0, 100, 1"), "set_modification_count", "get_modification_count");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "modification_count", PROPERTY_HINT_RANGE, "0, 100, 1", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_ARRAY, "Modifications,modifications/"), "set_modification_count", "get_modification_count");
 }
 
 SkeletonModificationStack2D::SkeletonModificationStack2D() {

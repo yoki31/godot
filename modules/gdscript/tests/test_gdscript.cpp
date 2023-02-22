@@ -1,32 +1,32 @@
-/*************************************************************************/
-/*  test_gdscript.cpp                                                    */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  test_gdscript.cpp                                                     */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #include "test_gdscript.h"
 
@@ -134,6 +134,34 @@ static void test_parser(const String &p_code, const String &p_script_path, const
 #endif
 }
 
+static void recursively_disassemble_functions(const Ref<GDScript> script, const Vector<String> &p_lines) {
+	for (const KeyValue<StringName, GDScriptFunction *> &E : script->get_member_functions()) {
+		const GDScriptFunction *func = E.value;
+
+		String signature = "Disassembling " + func->get_name().operator String() + "(";
+		for (int i = 0; i < func->get_argument_count(); i++) {
+			if (i > 0) {
+				signature += ", ";
+			}
+			signature += func->get_argument_name(i);
+		}
+		print_line(signature + ")");
+#ifdef TOOLS_ENABLED
+		func->disassemble(p_lines);
+#endif
+		print_line("");
+		print_line("");
+	}
+
+	for (const KeyValue<StringName, Ref<GDScript>> &F : script->get_subclasses()) {
+		const Ref<GDScript> inner_script = F.value;
+		print_line("");
+		print_line(vformat("Inner Class: %s", inner_script->get_script_class_name()));
+		print_line("");
+		recursively_disassemble_functions(inner_script, p_lines);
+	}
+}
+
 static void test_compiler(const String &p_code, const String &p_script_path, const Vector<String> &p_lines) {
 	GDScriptParser parser;
 	Error err = parser.parse(p_code, p_script_path, false);
@@ -172,23 +200,7 @@ static void test_compiler(const String &p_code, const String &p_script_path, con
 		return;
 	}
 
-	for (const KeyValue<StringName, GDScriptFunction *> &E : script->get_member_functions()) {
-		const GDScriptFunction *func = E.value;
-
-		String signature = "Disassembling " + func->get_name().operator String() + "(";
-		for (int i = 0; i < func->get_argument_count(); i++) {
-			if (i > 0) {
-				signature += ", ";
-			}
-			signature += func->get_argument_name(i);
-		}
-		print_line(signature + ")");
-#ifdef TOOLS_ENABLED
-		func->disassemble(p_lines);
-#endif
-		print_line("");
-		print_line("");
-	}
+	recursively_disassemble_functions(script, p_lines);
 }
 
 void test(TestType p_type) {
@@ -204,8 +216,8 @@ void test(TestType p_type) {
 		return;
 	}
 
-	FileAccessRef fa = FileAccess::open(test, FileAccess::READ);
-	ERR_FAIL_COND_MSG(!fa, "Could not open file: " + test);
+	Ref<FileAccess> fa = FileAccess::open(test, FileAccess::READ);
+	ERR_FAIL_COND_MSG(fa.is_null(), "Could not open file: " + test);
 
 	// Initialize the language for the test routine.
 	init_language(fa->get_path_absolute().get_base_dir());

@@ -1,38 +1,39 @@
-/*************************************************************************/
-/*  scene_shader_forward_mobile.cpp                                      */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  scene_shader_forward_mobile.cpp                                       */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #include "scene_shader_forward_mobile.h"
 #include "core/config/project_settings.h"
 #include "core/math/math_defs.h"
 #include "render_forward_mobile.h"
 #include "servers/rendering/renderer_rd/renderer_compositor_rd.h"
+#include "servers/rendering/renderer_rd/storage_rd/material_storage.h"
 
 using namespace RendererSceneRenderImplementation;
 
@@ -45,13 +46,12 @@ void SceneShaderForwardMobile::ShaderData::set_code(const String &p_code) {
 	valid = false;
 	ubo_size = 0;
 	uniforms.clear();
-	uses_screen_texture = false;
 
-	if (code == String()) {
+	if (code.is_empty()) {
 		return; //just invalid, but no error
 	}
 
-	ShaderCompilerRD::GeneratedCode gen_code;
+	ShaderCompiler::GeneratedCode gen_code;
 
 	int blend_mode = BLEND_MODE_MIX;
 	int depth_testi = DEPTH_TEST_ENABLED;
@@ -60,8 +60,10 @@ void SceneShaderForwardMobile::ShaderData::set_code(const String &p_code) {
 
 	uses_point_size = false;
 	uses_alpha = false;
+	uses_alpha_clip = false;
+	uses_alpha_antialiasing = false;
 	uses_blend_alpha = false;
-	uses_depth_pre_pass = false;
+	uses_depth_prepass_alpha = false;
 	uses_discard = false;
 	uses_roughness = false;
 	uses_normal = false;
@@ -71,9 +73,6 @@ void SceneShaderForwardMobile::ShaderData::set_code(const String &p_code) {
 	uses_vertex = false;
 	uses_sss = false;
 	uses_transmittance = false;
-	uses_screen_texture = false;
-	uses_depth_texture = false;
-	uses_normal_texture = false;
 	uses_time = false;
 	writes_modelview_or_projection = false;
 	uses_world_coordinates = false;
@@ -81,10 +80,10 @@ void SceneShaderForwardMobile::ShaderData::set_code(const String &p_code) {
 
 	int depth_drawi = DEPTH_DRAW_OPAQUE;
 
-	ShaderCompilerRD::IdentifierActions actions;
-	actions.entry_point_stages["vertex"] = ShaderCompilerRD::STAGE_VERTEX;
-	actions.entry_point_stages["fragment"] = ShaderCompilerRD::STAGE_FRAGMENT;
-	actions.entry_point_stages["light"] = ShaderCompilerRD::STAGE_FRAGMENT;
+	ShaderCompiler::IdentifierActions actions;
+	actions.entry_point_stages["vertex"] = ShaderCompiler::STAGE_VERTEX;
+	actions.entry_point_stages["fragment"] = ShaderCompiler::STAGE_FRAGMENT;
+	actions.entry_point_stages["light"] = ShaderCompiler::STAGE_FRAGMENT;
 
 	actions.render_mode_values["blend_add"] = Pair<int *, int>(&blend_mode, BLEND_MODE_ADD);
 	actions.render_mode_values["blend_mix"] = Pair<int *, int>(&blend_mode, BLEND_MODE_MIX);
@@ -109,14 +108,15 @@ void SceneShaderForwardMobile::ShaderData::set_code(const String &p_code) {
 	actions.render_mode_flags["particle_trails"] = &uses_particle_trails;
 
 	actions.usage_flag_pointers["ALPHA"] = &uses_alpha;
-	actions.render_mode_flags["depth_prepass_alpha"] = &uses_depth_pre_pass;
+	actions.usage_flag_pointers["ALPHA_SCISSOR_THRESHOLD"] = &uses_alpha_clip;
+	actions.usage_flag_pointers["ALPHA_HASH_SCALE"] = &uses_alpha_clip;
+	actions.usage_flag_pointers["ALPHA_ANTIALIASING_EDGE"] = &uses_alpha_antialiasing;
+	actions.usage_flag_pointers["ALPHA_TEXTURE_COORDINATE"] = &uses_alpha_antialiasing;
+	actions.render_mode_flags["depth_prepass_alpha"] = &uses_depth_prepass_alpha;
 
 	// actions.usage_flag_pointers["SSS_STRENGTH"] = &uses_sss;
 	// actions.usage_flag_pointers["SSS_TRANSMITTANCE_DEPTH"] = &uses_transmittance;
 
-	actions.usage_flag_pointers["SCREEN_TEXTURE"] = &uses_screen_texture;
-	actions.usage_flag_pointers["DEPTH_TEXTURE"] = &uses_depth_texture;
-	actions.usage_flag_pointers["NORMAL_TEXTURE"] = &uses_normal_texture;
 	actions.usage_flag_pointers["DISCARD"] = &uses_discard;
 	actions.usage_flag_pointers["TIME"] = &uses_time;
 	actions.usage_flag_pointers["ROUGHNESS"] = &uses_roughness;
@@ -143,6 +143,12 @@ void SceneShaderForwardMobile::ShaderData::set_code(const String &p_code) {
 
 	depth_draw = DepthDraw(depth_drawi);
 	depth_test = DepthTest(depth_testi);
+	uses_vertex_time = gen_code.uses_vertex_time;
+	uses_fragment_time = gen_code.uses_fragment_time;
+	uses_screen_texture_mipmaps = gen_code.uses_screen_texture_mipmaps;
+	uses_screen_texture = gen_code.uses_screen_texture;
+	uses_depth_texture = gen_code.uses_depth_texture;
+	uses_normal_texture = gen_code.uses_normal_roughness_texture;
 
 #if 0
 	print_line("**compiling shader:");
@@ -151,19 +157,18 @@ void SceneShaderForwardMobile::ShaderData::set_code(const String &p_code) {
 		print_line(gen_code.defines[i]);
 	}
 
-	Map<String, String>::Element * el = gen_code.code.front();
+	HashMap<String, String>::Iterator el = gen_code.code.begin();
 	while (el) {
-		print_line("\n**code " + el->key() + ":\n" + el->value());
-
-		el = el->next();
+		print_line("\n**code " + el->key + ":\n" + el->value);
+		++el;
 	}
 
 	print_line("\n**uniforms:\n" + gen_code.uniforms);
-	print_line("\n**vertex_globals:\n" + gen_code.stage_globals[ShaderCompilerRD::STAGE_VERTEX]);
-	print_line("\n**fragment_globals:\n" + gen_code.stage_globals[ShaderCompilerRD::STAGE_FRAGMENT]);
+	print_line("\n**vertex_globals:\n" + gen_code.stage_globals[ShaderCompiler::STAGE_VERTEX]);
+	print_line("\n**fragment_globals:\n" + gen_code.stage_globals[ShaderCompiler::STAGE_FRAGMENT]);
 #endif
 
-	shader_singleton->shader.version_set_code(version, gen_code.code, gen_code.uniforms, gen_code.stage_globals[ShaderCompilerRD::STAGE_VERTEX], gen_code.stage_globals[ShaderCompilerRD::STAGE_FRAGMENT], gen_code.defines);
+	shader_singleton->shader.version_set_code(version, gen_code.code, gen_code.uniforms, gen_code.stage_globals[ShaderCompiler::STAGE_VERTEX], gen_code.stage_globals[ShaderCompiler::STAGE_FRAGMENT], gen_code.defines);
 	ERR_FAIL_COND(!shader_singleton->shader.version_is_valid(version));
 
 	ubo_size = gen_code.uniform_total_size;
@@ -293,7 +298,7 @@ void SceneShaderForwardMobile::ShaderData::set_code(const String &p_code) {
 
 					if (k == SHADER_VERSION_COLOR_PASS || k == SHADER_VERSION_COLOR_PASS_MULTIVIEW || k == SHADER_VERSION_LIGHTMAP_COLOR_PASS || k == SHADER_VERSION_LIGHTMAP_COLOR_PASS_MULTIVIEW) {
 						blend_state = blend_state_blend;
-						if (depth_draw == DEPTH_DRAW_OPAQUE) {
+						if (depth_draw == DEPTH_DRAW_OPAQUE && !uses_alpha_clip) {
 							depth_stencil.enable_depth_write = false; //alpha does not draw depth
 						}
 					} else if (k == SHADER_VERSION_SHADOW_PASS || k == SHADER_VERSION_SHADOW_PASS_MULTIVIEW || k == SHADER_VERSION_SHADOW_PASS_DP) {
@@ -325,74 +330,16 @@ void SceneShaderForwardMobile::ShaderData::set_code(const String &p_code) {
 	valid = true;
 }
 
-void SceneShaderForwardMobile::ShaderData::set_default_texture_param(const StringName &p_name, RID p_texture) {
-	if (!p_texture.is_valid()) {
-		default_texture_params.erase(p_name);
-	} else {
-		default_texture_params[p_name] = p_texture;
-	}
-}
-
-void SceneShaderForwardMobile::ShaderData::get_param_list(List<PropertyInfo> *p_param_list) const {
-	Map<int, StringName> order;
-
-	for (const KeyValue<StringName, ShaderLanguage::ShaderNode::Uniform> &E : uniforms) {
-		if (E.value.scope != ShaderLanguage::ShaderNode::Uniform::SCOPE_LOCAL) {
-			continue;
-		}
-
-		if (E.value.texture_order >= 0) {
-			order[E.value.texture_order + 100000] = E.key;
-		} else {
-			order[E.value.order] = E.key;
-		}
-	}
-
-	for (const KeyValue<int, StringName> &E : order) {
-		PropertyInfo pi = ShaderLanguage::uniform_to_property_info(uniforms[E.value]);
-		pi.name = E.value;
-		p_param_list->push_back(pi);
-	}
-}
-
-void SceneShaderForwardMobile::ShaderData::get_instance_param_list(List<RendererStorage::InstanceShaderParam> *p_param_list) const {
-	for (const KeyValue<StringName, ShaderLanguage::ShaderNode::Uniform> &E : uniforms) {
-		if (E.value.scope != ShaderLanguage::ShaderNode::Uniform::SCOPE_INSTANCE) {
-			continue;
-		}
-
-		RendererStorage::InstanceShaderParam p;
-		p.info = ShaderLanguage::uniform_to_property_info(E.value);
-		p.info.name = E.key; //supply name
-		p.index = E.value.instance_index;
-		p.default_value = ShaderLanguage::constant_value_to_variant(E.value.default_value, E.value.type, E.value.array_size, E.value.hint);
-		p_param_list->push_back(p);
-	}
-}
-
-bool SceneShaderForwardMobile::ShaderData::is_param_texture(const StringName &p_param) const {
-	if (!uniforms.has(p_param)) {
-		return false;
-	}
-
-	return uniforms[p_param].texture_order >= 0;
-}
-
 bool SceneShaderForwardMobile::ShaderData::is_animated() const {
-	return false;
+	return (uses_fragment_time && uses_discard) || (uses_vertex_time && uses_vertex);
 }
 
 bool SceneShaderForwardMobile::ShaderData::casts_shadows() const {
-	return false;
-}
+	bool has_read_screen_alpha = uses_screen_texture || uses_depth_texture || uses_normal_texture;
+	bool has_base_alpha = (uses_alpha && (!uses_alpha_clip || uses_alpha_antialiasing)) || has_read_screen_alpha;
+	bool has_alpha = has_base_alpha || uses_blend_alpha;
 
-Variant SceneShaderForwardMobile::ShaderData::get_default_parameter(const StringName &p_parameter) const {
-	if (uniforms.has(p_parameter)) {
-		ShaderLanguage::ShaderNode::Uniform uniform = uniforms[p_parameter];
-		Vector<ShaderLanguage::ConstantNode::Value> default_value = uniform.default_value;
-		return ShaderLanguage::constant_value_to_variant(default_value, uniform.type, uniform.array_size, uniform.hint);
-	}
-	return Variant();
+	return !has_alpha || (uses_depth_prepass_alpha && !(depth_draw == DEPTH_DRAW_DISABLED || depth_test == DEPTH_TEST_DISABLED));
 }
 
 RS::ShaderNativeSourceCode SceneShaderForwardMobile::ShaderData::get_native_source_code() const {
@@ -403,8 +350,6 @@ RS::ShaderNativeSourceCode SceneShaderForwardMobile::ShaderData::get_native_sour
 
 SceneShaderForwardMobile::ShaderData::ShaderData() :
 		shader_list_element(this) {
-	valid = false;
-	uses_screen_texture = false;
 }
 
 SceneShaderForwardMobile::ShaderData::~ShaderData() {
@@ -416,7 +361,7 @@ SceneShaderForwardMobile::ShaderData::~ShaderData() {
 	}
 }
 
-RendererStorageRD::ShaderData *SceneShaderForwardMobile::_create_shader_func() {
+RendererRD::MaterialStorage::ShaderData *SceneShaderForwardMobile::_create_shader_func() {
 	ShaderData *shader_data = memnew(ShaderData);
 	singleton->shader_list.add(&shader_data->shader_list_element);
 	return shader_data;
@@ -430,20 +375,19 @@ void SceneShaderForwardMobile::MaterialData::set_next_pass(RID p_pass) {
 	next_pass = p_pass;
 }
 
-bool SceneShaderForwardMobile::MaterialData::update_parameters(const Map<StringName, Variant> &p_parameters, bool p_uniform_dirty, bool p_textures_dirty) {
+bool SceneShaderForwardMobile::MaterialData::update_parameters(const HashMap<StringName, Variant> &p_parameters, bool p_uniform_dirty, bool p_textures_dirty) {
 	SceneShaderForwardMobile *shader_singleton = (SceneShaderForwardMobile *)SceneShaderForwardMobile::singleton;
 
-	return update_parameters_uniform_set(p_parameters, p_uniform_dirty, p_textures_dirty, shader_data->uniforms, shader_data->ubo_offsets.ptr(), shader_data->texture_uniforms, shader_data->default_texture_params, shader_data->ubo_size, uniform_set, shader_singleton->shader.version_get_shader(shader_data->version, 0), RenderForwardMobile::MATERIAL_UNIFORM_SET, RD::BARRIER_MASK_RASTER);
+	return update_parameters_uniform_set(p_parameters, p_uniform_dirty, p_textures_dirty, shader_data->uniforms, shader_data->ubo_offsets.ptr(), shader_data->texture_uniforms, shader_data->default_texture_params, shader_data->ubo_size, uniform_set, shader_singleton->shader.version_get_shader(shader_data->version, 0), RenderForwardMobile::MATERIAL_UNIFORM_SET, true, RD::BARRIER_MASK_RASTER);
 }
 
 SceneShaderForwardMobile::MaterialData::~MaterialData() {
 	free_parameters_uniform_set(uniform_set);
 }
 
-RendererStorageRD::MaterialData *SceneShaderForwardMobile::_create_material_func(ShaderData *p_shader) {
+RendererRD::MaterialStorage::MaterialData *SceneShaderForwardMobile::_create_material_func(ShaderData *p_shader) {
 	MaterialData *material_data = memnew(MaterialData);
 	material_data->shader_data = p_shader;
-	material_data->last_frame = false;
 	//update will happen later anyway so do nothing.
 	return material_data;
 }
@@ -457,8 +401,8 @@ SceneShaderForwardMobile::SceneShaderForwardMobile() {
 	singleton = this;
 }
 
-void SceneShaderForwardMobile::init(RendererStorageRD *p_storage, const String p_defines) {
-	storage = p_storage;
+void SceneShaderForwardMobile::init(const String p_defines) {
+	RendererRD::MaterialStorage *material_storage = RendererRD::MaterialStorage::get_singleton();
 
 	/* SCENE SHADER */
 
@@ -477,24 +421,24 @@ void SceneShaderForwardMobile::init(RendererStorageRD *p_storage, const String p
 
 		shader.initialize(shader_versions, p_defines);
 
-		if (!RendererCompositorRD::singleton->is_xr_enabled()) {
+		if (!RendererCompositorRD::get_singleton()->is_xr_enabled()) {
 			shader.set_variant_enabled(SHADER_VERSION_COLOR_PASS_MULTIVIEW, false);
 			shader.set_variant_enabled(SHADER_VERSION_LIGHTMAP_COLOR_PASS_MULTIVIEW, false);
 			shader.set_variant_enabled(SHADER_VERSION_SHADOW_PASS_MULTIVIEW, false);
 		}
 	}
 
-	storage->shader_set_data_request_function(RendererStorageRD::SHADER_TYPE_3D, _create_shader_funcs);
-	storage->material_set_data_request_function(RendererStorageRD::SHADER_TYPE_3D, _create_material_funcs);
+	material_storage->shader_set_data_request_function(RendererRD::MaterialStorage::SHADER_TYPE_3D, _create_shader_funcs);
+	material_storage->material_set_data_request_function(RendererRD::MaterialStorage::SHADER_TYPE_3D, _create_material_funcs);
 
 	{
 		//shader compiler
-		ShaderCompilerRD::DefaultIdentifierActions actions;
+		ShaderCompiler::DefaultIdentifierActions actions;
 
-		actions.renames["WORLD_MATRIX"] = "world_matrix";
-		actions.renames["WORLD_NORMAL_MATRIX"] = "world_normal_matrix";
-		actions.renames["INV_CAMERA_MATRIX"] = "scene_data.inv_camera_matrix";
-		actions.renames["CAMERA_MATRIX"] = "scene_data.camera_matrix";
+		actions.renames["MODEL_MATRIX"] = "read_model_matrix";
+		actions.renames["MODEL_NORMAL_MATRIX"] = "model_normal_matrix";
+		actions.renames["VIEW_MATRIX"] = "scene_data.view_matrix";
+		actions.renames["INV_VIEW_MATRIX"] = "inv_view_matrix";
 		actions.renames["PROJECTION_MATRIX"] = "projection_matrix";
 		actions.renames["INV_PROJECTION_MATRIX"] = "inv_projection_matrix";
 		actions.renames["MODELVIEW_MATRIX"] = "modelview";
@@ -510,6 +454,7 @@ void SceneShaderForwardMobile::init(RendererStorageRD *p_storage, const String p
 		actions.renames["COLOR"] = "color_interp";
 		actions.renames["POINT_SIZE"] = "gl_PointSize";
 		actions.renames["INSTANCE_ID"] = "gl_InstanceIndex";
+		actions.renames["VERTEX_ID"] = "gl_VertexIndex";
 
 		actions.renames["ALPHA_SCISSOR_THRESHOLD"] = "alpha_scissor_threshold";
 		actions.renames["ALPHA_HASH_SCALE"] = "alpha_hash_scale";
@@ -518,7 +463,7 @@ void SceneShaderForwardMobile::init(RendererStorageRD *p_storage, const String p
 
 		//builtins
 
-		actions.renames["TIME"] = "scene_data.time";
+		actions.renames["TIME"] = "scene_data_block.data.time";
 		actions.renames["PI"] = _MKSTR(Math_PI);
 		actions.renames["TAU"] = _MKSTR(Math_TAU);
 		actions.renames["E"] = _MKSTR(Math_E);
@@ -536,7 +481,7 @@ void SceneShaderForwardMobile::init(RendererStorageRD *p_storage, const String p
 		actions.renames["RIM"] = "rim";
 		actions.renames["RIM_TINT"] = "rim_tint";
 		actions.renames["CLEARCOAT"] = "clearcoat";
-		actions.renames["CLEARCOAT_GLOSS"] = "clearcoat_gloss";
+		actions.renames["CLEARCOAT_ROUGHNESS"] = "clearcoat_roughness";
 		actions.renames["ANISOTROPY"] = "anisotropy";
 		actions.renames["ANISOTROPY_FLOW"] = "anisotropy_flow";
 		actions.renames["SSS_STRENGTH"] = "sss_strength";
@@ -550,12 +495,9 @@ void SceneShaderForwardMobile::init(RendererStorageRD *p_storage, const String p
 		actions.renames["POINT_COORD"] = "gl_PointCoord";
 		actions.renames["INSTANCE_CUSTOM"] = "instance_custom";
 		actions.renames["SCREEN_UV"] = "screen_uv";
-		actions.renames["SCREEN_TEXTURE"] = "color_buffer";
-		actions.renames["DEPTH_TEXTURE"] = "depth_buffer";
-		actions.renames["NORMAL_ROUGHNESS_TEXTURE"] = "normal_roughness_buffer";
 		actions.renames["DEPTH"] = "gl_FragDepth";
 		actions.renames["OUTPUT_IS_SRGB"] = "true";
-		actions.renames["FOG"] = "custom_fog";
+		actions.renames["FOG"] = "fog";
 		actions.renames["RADIANCE"] = "custom_radiance";
 		actions.renames["IRRADIANCE"] = "custom_irradiance";
 		actions.renames["BONE_INDICES"] = "bone_attrib";
@@ -564,17 +506,24 @@ void SceneShaderForwardMobile::init(RendererStorageRD *p_storage, const String p
 		actions.renames["CUSTOM1"] = "custom1_attrib";
 		actions.renames["CUSTOM2"] = "custom2_attrib";
 		actions.renames["CUSTOM3"] = "custom3_attrib";
+		actions.renames["OUTPUT_IS_SRGB"] = "SHADER_IS_SRGB";
+
+		actions.renames["NODE_POSITION_WORLD"] = "read_model_matrix[3].xyz";
+		actions.renames["CAMERA_POSITION_WORLD"] = "scene_data.inv_view_matrix[3].xyz";
+		actions.renames["CAMERA_DIRECTION_WORLD"] = "scene_data.view_matrix[3].xyz";
+		actions.renames["CAMERA_VISIBLE_LAYERS"] = "scene_data.camera_visible_layers";
+		actions.renames["NODE_POSITION_VIEW"] = "(read_model_matrix * scene_data.view_matrix)[3].xyz";
 
 		actions.renames["VIEW_INDEX"] = "ViewIndex";
 		actions.renames["VIEW_MONO_LEFT"] = "0";
 		actions.renames["VIEW_RIGHT"] = "1";
+		actions.renames["EYE_OFFSET"] = "eye_offset";
 
 		//for light
 		actions.renames["VIEW"] = "view";
 		actions.renames["LIGHT_COLOR"] = "light_color";
 		actions.renames["LIGHT"] = "light";
 		actions.renames["ATTENUATION"] = "attenuation";
-		actions.renames["SHADOW_ATTENUATION"] = "shadow_attenuation";
 		actions.renames["DIFFUSE_LIGHT"] = "diffuse_light";
 		actions.renames["SPECULAR_LIGHT"] = "specular_light";
 
@@ -584,7 +533,7 @@ void SceneShaderForwardMobile::init(RendererStorageRD *p_storage, const String p
 		actions.usage_defines["RIM"] = "#define LIGHT_RIM_USED\n";
 		actions.usage_defines["RIM_TINT"] = "@RIM";
 		actions.usage_defines["CLEARCOAT"] = "#define LIGHT_CLEARCOAT_USED\n";
-		actions.usage_defines["CLEARCOAT_GLOSS"] = "@CLEARCOAT";
+		actions.usage_defines["CLEARCOAT_ROUGHNESS"] = "@CLEARCOAT";
 		actions.usage_defines["ANISOTROPY"] = "#define LIGHT_ANISOTROPY_USED\n";
 		actions.usage_defines["ANISOTROPY_FLOW"] = "@ANISOTROPY";
 		actions.usage_defines["AO"] = "#define AO_USED\n";
@@ -611,7 +560,6 @@ void SceneShaderForwardMobile::init(RendererStorageRD *p_storage, const String p
 		actions.usage_defines["SSS_STRENGTH"] = "#define ENABLE_SSS\n";
 		actions.usage_defines["SSS_TRANSMITTANCE_DEPTH"] = "#define ENABLE_TRANSMITTANCE\n";
 		actions.usage_defines["BACKLIGHT"] = "#define LIGHT_BACKLIGHT_USED\n";
-		actions.usage_defines["SCREEN_TEXTURE"] = "#define SCREEN_TEXTURE_USED\n";
 		actions.usage_defines["SCREEN_UV"] = "#define SCREEN_UV_USED\n";
 
 		actions.usage_defines["DIFFUSE_LIGHT"] = "#define USE_LIGHT_SHADER_CODE\n";
@@ -621,12 +569,15 @@ void SceneShaderForwardMobile::init(RendererStorageRD *p_storage, const String p
 		actions.usage_defines["RADIANCE"] = "#define CUSTOM_RADIANCE_USED\n";
 		actions.usage_defines["IRRADIANCE"] = "#define CUSTOM_IRRADIANCE_USED\n";
 
+		actions.usage_defines["MODEL_MATRIX"] = "#define MODEL_MATRIX_USED\n";
+
 		actions.render_mode_defines["skip_vertex_transform"] = "#define SKIP_TRANSFORM_USED\n";
 		actions.render_mode_defines["world_vertex_coords"] = "#define VERTEX_WORLD_COORDS_USED\n";
 		actions.render_mode_defines["ensure_correct_normals"] = "#define ENSURE_CORRECT_NORMALS\n";
 		actions.render_mode_defines["cull_front"] = "#define DO_SIDE_CHECK\n";
 		actions.render_mode_defines["cull_disabled"] = "#define DO_SIDE_CHECK\n";
 		actions.render_mode_defines["particle_trails"] = "#define USE_PARTICLE_TRAILS\n";
+		actions.render_mode_defines["depth_draw_opaque"] = "#define USE_OPAQUE_PREPASS\n";
 
 		bool force_lambert = GLOBAL_GET("rendering/shading/overrides/force_lambert_over_burley");
 		if (!force_lambert) {
@@ -638,15 +589,8 @@ void SceneShaderForwardMobile::init(RendererStorageRD *p_storage, const String p
 
 		actions.render_mode_defines["sss_mode_skin"] = "#define SSS_MODE_SKIN\n";
 
-		bool force_blinn = GLOBAL_GET("rendering/shading/overrides/force_blinn_over_ggx");
-		if (!force_blinn) {
-			actions.render_mode_defines["specular_schlick_ggx"] = "#define SPECULAR_SCHLICK_GGX\n";
-		} else {
-			actions.render_mode_defines["specular_schlick_ggx"] = "#define SPECULAR_BLINN\n";
-		}
+		actions.render_mode_defines["specular_schlick_ggx"] = "#define SPECULAR_SCHLICK_GGX\n";
 
-		actions.render_mode_defines["specular_blinn"] = "#define SPECULAR_BLINN\n";
-		actions.render_mode_defines["specular_phong"] = "#define SPECULAR_PHONG\n";
 		actions.render_mode_defines["specular_toon"] = "#define SPECULAR_TOON\n";
 		actions.render_mode_defines["specular_disabled"] = "#define SPECULAR_DISABLED\n";
 		actions.render_mode_defines["shadows_disabled"] = "#define SHADOWS_DISABLED\n";
@@ -662,19 +606,20 @@ void SceneShaderForwardMobile::init(RendererStorageRD *p_storage, const String p
 
 		actions.default_filter = ShaderLanguage::FILTER_LINEAR_MIPMAP;
 		actions.default_repeat = ShaderLanguage::REPEAT_ENABLE;
-		actions.global_buffer_array_variable = "global_variables.data";
+		actions.global_buffer_array_variable = "global_shader_uniforms.data";
 		actions.instance_uniform_index_variable = "draw_call.instance_uniforms_ofs";
 
 		actions.apply_luminance_multiplier = true; // apply luminance multiplier to screen texture
+		actions.check_multiview_samplers = RendererCompositorRD::get_singleton()->is_xr_enabled(); // Make sure we check sampling multiview textures.
 
 		compiler.initialize(actions);
 	}
 
 	{
 		//default material and shader
-		default_shader = storage->shader_allocate();
-		storage->shader_initialize(default_shader);
-		storage->shader_set_code(default_shader, R"(
+		default_shader = material_storage->shader_allocate();
+		material_storage->shader_initialize(default_shader);
+		material_storage->shader_set_code(default_shader, R"(
 // Default 3D material shader (mobile).
 
 shader_type spatial;
@@ -689,11 +634,11 @@ void fragment() {
 	METALLIC = 0.2;
 }
 )");
-		default_material = storage->material_allocate();
-		storage->material_initialize(default_material);
-		storage->material_set_shader(default_material, default_shader);
+		default_material = material_storage->material_allocate();
+		material_storage->material_initialize(default_material);
+		material_storage->material_set_shader(default_material, default_shader);
 
-		MaterialData *md = (MaterialData *)storage->material_get_data(default_material, RendererStorageRD::SHADER_TYPE_3D);
+		MaterialData *md = static_cast<MaterialData *>(material_storage->material_get_data(default_material, RendererRD::MaterialStorage::SHADER_TYPE_3D));
 		default_shader_rd = shader.version_get_shader(md->shader_data->version, SHADER_VERSION_COLOR_PASS);
 
 		default_material_shader_ptr = md->shader_data;
@@ -701,10 +646,10 @@ void fragment() {
 	}
 
 	{
-		overdraw_material_shader = storage->shader_allocate();
-		storage->shader_initialize(overdraw_material_shader);
+		overdraw_material_shader = material_storage->shader_allocate();
+		material_storage->shader_initialize(overdraw_material_shader);
 		// Use relatively low opacity so that more "layers" of overlapping objects can be distinguished.
-		storage->shader_set_code(overdraw_material_shader, R"(
+		material_storage->shader_set_code(overdraw_material_shader, R"(
 // 3D editor Overdraw debug draw mode shader (mobile).
 
 shader_type spatial;
@@ -716,11 +661,11 @@ void fragment() {
 	ALPHA = 0.1;
 }
 )");
-		overdraw_material = storage->material_allocate();
-		storage->material_initialize(overdraw_material);
-		storage->material_set_shader(overdraw_material, overdraw_material_shader);
+		overdraw_material = material_storage->material_allocate();
+		material_storage->material_initialize(overdraw_material);
+		material_storage->material_set_shader(overdraw_material, overdraw_material_shader);
 
-		MaterialData *md = (MaterialData *)storage->material_get_data(overdraw_material, RendererStorageRD::SHADER_TYPE_3D);
+		MaterialData *md = static_cast<MaterialData *>(material_storage->material_get_data(overdraw_material, RendererRD::MaterialStorage::SHADER_TYPE_3D));
 		overdraw_material_shader_ptr = md->shader_data;
 		overdraw_material_uniform_set = md->uniform_set;
 	}
@@ -730,7 +675,7 @@ void fragment() {
 		Vector<RD::Uniform> uniforms;
 		RD::Uniform u;
 		u.uniform_type = RD::UNIFORM_TYPE_STORAGE_BUFFER;
-		u.ids.push_back(default_vec4_xform_buffer);
+		u.append_id(default_vec4_xform_buffer);
 		u.binding = 0;
 		uniforms.push_back(u);
 
@@ -760,12 +705,14 @@ void SceneShaderForwardMobile::set_default_specialization_constants(const Vector
 }
 
 SceneShaderForwardMobile::~SceneShaderForwardMobile() {
+	RendererRD::MaterialStorage *material_storage = RendererRD::MaterialStorage::get_singleton();
+
 	RD::get_singleton()->free(default_vec4_xform_buffer);
 	RD::get_singleton()->free(shadow_sampler);
 
-	storage->free(overdraw_material_shader);
-	storage->free(default_shader);
+	material_storage->shader_free(overdraw_material_shader);
+	material_storage->shader_free(default_shader);
 
-	storage->free(overdraw_material);
-	storage->free(default_material);
+	material_storage->material_free(overdraw_material);
+	material_storage->material_free(default_material);
 }

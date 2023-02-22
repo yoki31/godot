@@ -1,32 +1,32 @@
-/*************************************************************************/
-/*  ray_cast_3d.cpp                                                      */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  ray_cast_3d.cpp                                                       */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #include "ray_cast_3d.h"
 
@@ -86,6 +86,10 @@ Object *RayCast3D::get_collider() const {
 	}
 
 	return ObjectDB::get_instance(against);
+}
+
+RID RayCast3D::get_collider_rid() const {
+	return against_rid;
 }
 
 int RayCast3D::get_collider_shape() const {
@@ -171,8 +175,8 @@ void RayCast3D::_notification(int p_what) {
 					exclude.erase(Object::cast_to<CollisionObject3D>(get_parent())->get_rid());
 				}
 			}
-
 		} break;
+
 		case NOTIFICATION_EXIT_TREE: {
 			if (enabled) {
 				set_physics_process_internal(false);
@@ -181,8 +185,8 @@ void RayCast3D::_notification(int p_what) {
 			if (debug_shape) {
 				_clear_debug_shape();
 			}
-
 		} break;
+
 		case NOTIFICATION_INTERNAL_PHYSICS_PROCESS: {
 			if (!enabled) {
 				break;
@@ -193,7 +197,6 @@ void RayCast3D::_notification(int p_what) {
 			if (prev_collision_state != collided && get_tree()->is_debugging_collisions_hint()) {
 				_update_debug_shape_material(true);
 			}
-
 		} break;
 	}
 }
@@ -212,17 +215,27 @@ void RayCast3D::_update_raycast_state() {
 		to = Vector3(0, 0.01, 0);
 	}
 
-	PhysicsDirectSpaceState3D::RayResult rr;
+	PhysicsDirectSpaceState3D::RayParameters ray_params;
+	ray_params.from = gt.get_origin();
+	ray_params.to = gt.xform(to);
+	ray_params.exclude = exclude;
+	ray_params.collision_mask = collision_mask;
+	ray_params.collide_with_bodies = collide_with_bodies;
+	ray_params.collide_with_areas = collide_with_areas;
+	ray_params.hit_from_inside = hit_from_inside;
 
-	if (dss->intersect_ray(gt.get_origin(), gt.xform(to), rr, exclude, collision_mask, collide_with_bodies, collide_with_areas)) {
+	PhysicsDirectSpaceState3D::RayResult rr;
+	if (dss->intersect_ray(ray_params, rr)) {
 		collided = true;
 		against = rr.collider_id;
+		against_rid = rr.rid;
 		collision_point = rr.position;
 		collision_normal = rr.normal;
 		against_shape = rr.shape;
 	} else {
 		collided = false;
 		against = ObjectID();
+		against_rid = RID();
 		against_shape = 0;
 	}
 }
@@ -235,46 +248,53 @@ void RayCast3D::add_exception_rid(const RID &p_rid) {
 	exclude.insert(p_rid);
 }
 
-void RayCast3D::add_exception(const Object *p_object) {
-	ERR_FAIL_NULL(p_object);
-	const CollisionObject3D *co = Object::cast_to<CollisionObject3D>(p_object);
-	if (!co) {
-		return;
-	}
-	add_exception_rid(co->get_rid());
+void RayCast3D::add_exception(const CollisionObject3D *p_node) {
+	ERR_FAIL_NULL_MSG(p_node, "The passed Node must be an instance of CollisionObject3D.");
+	add_exception_rid(p_node->get_rid());
 }
 
 void RayCast3D::remove_exception_rid(const RID &p_rid) {
 	exclude.erase(p_rid);
 }
 
-void RayCast3D::remove_exception(const Object *p_object) {
-	ERR_FAIL_NULL(p_object);
-	const CollisionObject3D *co = Object::cast_to<CollisionObject3D>(p_object);
-	if (!co) {
-		return;
-	}
-	remove_exception_rid(co->get_rid());
+void RayCast3D::remove_exception(const CollisionObject3D *p_node) {
+	ERR_FAIL_NULL_MSG(p_node, "The passed Node must be an instance of CollisionObject3D.");
+	remove_exception_rid(p_node->get_rid());
 }
 
 void RayCast3D::clear_exceptions() {
 	exclude.clear();
+
+	if (exclude_parent_body && is_inside_tree()) {
+		CollisionObject3D *parent = Object::cast_to<CollisionObject3D>(get_parent());
+		if (parent) {
+			exclude.insert(parent->get_rid());
+		}
+	}
 }
 
-void RayCast3D::set_collide_with_areas(bool p_clip) {
-	collide_with_areas = p_clip;
+void RayCast3D::set_collide_with_areas(bool p_enabled) {
+	collide_with_areas = p_enabled;
 }
 
 bool RayCast3D::is_collide_with_areas_enabled() const {
 	return collide_with_areas;
 }
 
-void RayCast3D::set_collide_with_bodies(bool p_clip) {
-	collide_with_bodies = p_clip;
+void RayCast3D::set_collide_with_bodies(bool p_enabled) {
+	collide_with_bodies = p_enabled;
 }
 
 bool RayCast3D::is_collide_with_bodies_enabled() const {
 	return collide_with_bodies;
+}
+
+void RayCast3D::set_hit_from_inside(bool p_enabled) {
+	hit_from_inside = p_enabled;
+}
+
+bool RayCast3D::is_hit_from_inside_enabled() const {
+	return hit_from_inside;
 }
 
 void RayCast3D::_bind_methods() {
@@ -288,6 +308,7 @@ void RayCast3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("force_raycast_update"), &RayCast3D::force_raycast_update);
 
 	ClassDB::bind_method(D_METHOD("get_collider"), &RayCast3D::get_collider);
+	ClassDB::bind_method(D_METHOD("get_collider_rid"), &RayCast3D::get_collider_rid);
 	ClassDB::bind_method(D_METHOD("get_collider_shape"), &RayCast3D::get_collider_shape);
 	ClassDB::bind_method(D_METHOD("get_collision_point"), &RayCast3D::get_collision_point);
 	ClassDB::bind_method(D_METHOD("get_collision_normal"), &RayCast3D::get_collision_normal);
@@ -315,6 +336,9 @@ void RayCast3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_collide_with_bodies", "enable"), &RayCast3D::set_collide_with_bodies);
 	ClassDB::bind_method(D_METHOD("is_collide_with_bodies_enabled"), &RayCast3D::is_collide_with_bodies_enabled);
 
+	ClassDB::bind_method(D_METHOD("set_hit_from_inside", "enable"), &RayCast3D::set_hit_from_inside);
+	ClassDB::bind_method(D_METHOD("is_hit_from_inside_enabled"), &RayCast3D::is_hit_from_inside_enabled);
+
 	ClassDB::bind_method(D_METHOD("set_debug_shape_custom_color", "debug_shape_custom_color"), &RayCast3D::set_debug_shape_custom_color);
 	ClassDB::bind_method(D_METHOD("get_debug_shape_custom_color"), &RayCast3D::get_debug_shape_custom_color);
 
@@ -323,8 +347,9 @@ void RayCast3D::_bind_methods() {
 
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "enabled"), "set_enabled", "is_enabled");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "exclude_parent"), "set_exclude_parent_body", "get_exclude_parent_body");
-	ADD_PROPERTY(PropertyInfo(Variant::VECTOR3, "target_position"), "set_target_position", "get_target_position");
+	ADD_PROPERTY(PropertyInfo(Variant::VECTOR3, "target_position", PROPERTY_HINT_NONE, "suffix:m"), "set_target_position", "get_target_position");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "collision_mask", PROPERTY_HINT_LAYERS_3D_PHYSICS), "set_collision_mask", "get_collision_mask");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "hit_from_inside"), "set_hit_from_inside", "is_hit_from_inside_enabled");
 
 	ADD_GROUP("Collide With", "collide_with");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "collide_with_areas", PROPERTY_HINT_LAYERS_3D_PHYSICS), "set_collide_with_areas", "is_collide_with_areas_enabled");
@@ -335,7 +360,7 @@ void RayCast3D::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "debug_shape_thickness", PROPERTY_HINT_RANGE, "1,5"), "set_debug_shape_thickness", "get_debug_shape_thickness");
 }
 
-float RayCast3D::get_debug_shape_thickness() const {
+int RayCast3D::get_debug_shape_thickness() const {
 	return debug_shape_thickness;
 }
 
@@ -364,7 +389,7 @@ void RayCast3D::_update_debug_shape_vertices() {
 	}
 }
 
-void RayCast3D::set_debug_shape_thickness(const float p_debug_shape_thickness) {
+void RayCast3D::set_debug_shape_thickness(const int p_debug_shape_thickness) {
 	debug_shape_thickness = p_debug_shape_thickness;
 	update_gizmos();
 
@@ -491,7 +516,7 @@ void RayCast3D::_clear_debug_shape() {
 
 	MeshInstance3D *mi = static_cast<MeshInstance3D *>(debug_shape);
 	if (mi->is_inside_tree()) {
-		mi->queue_delete();
+		mi->queue_free();
 	} else {
 		memdelete(mi);
 	}

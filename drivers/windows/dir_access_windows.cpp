@@ -1,32 +1,32 @@
-/*************************************************************************/
-/*  dir_access_windows.cpp                                               */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  dir_access_windows.cpp                                                */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #if defined(WINDOWS_ENABLED)
 
@@ -133,7 +133,7 @@ Error DirAccessWindows::change_dir(String p_dir) {
 	bool worked = (SetCurrentDirectoryW((LPCWSTR)(p_dir.utf16().get_data())) != 0);
 
 	String base = _get_root_path();
-	if (base != "") {
+	if (!base.is_empty()) {
 		GetCurrentDirectoryW(2048, real_current_dir_name);
 		String new_dir = String::utf16((const char16_t *)real_current_dir_name).replace("\\", "/");
 		if (!new_dir.begins_with(base)) {
@@ -157,16 +157,19 @@ Error DirAccessWindows::make_dir(String p_dir) {
 
 	p_dir = fix_path(p_dir);
 	if (p_dir.is_relative_path()) {
-		p_dir = current_dir.plus_file(p_dir);
+		p_dir = current_dir.path_join(p_dir);
 	}
 
-	p_dir = p_dir.replace("/", "\\");
+	p_dir = p_dir.simplify_path().replace("/", "\\");
 
 	bool success;
 	int err;
 
-	p_dir = "\\\\?\\" + p_dir; //done according to
-	// https://msdn.microsoft.com/en-us/library/windows/desktop/aa363855(v=vs.85).aspx
+	if (!p_dir.is_network_share_path()) {
+		p_dir = "\\\\?\\" + p_dir;
+		// Add "\\?\" to the path to extend max. path length past 248, if it's not a network share UNC path.
+		// See https://msdn.microsoft.com/en-us/library/windows/desktop/aa363855(v=vs.85).aspx
+	}
 
 	success = CreateDirectoryW((LPCWSTR)(p_dir.utf16().get_data()), nullptr);
 	err = GetLastError();
@@ -182,9 +185,9 @@ Error DirAccessWindows::make_dir(String p_dir) {
 	return ERR_CANT_CREATE;
 }
 
-String DirAccessWindows::get_current_dir(bool p_include_drive) {
+String DirAccessWindows::get_current_dir(bool p_include_drive) const {
 	String base = _get_root_path();
-	if (base != "") {
+	if (!base.is_empty()) {
 		String bd = current_dir.replace("\\", "/").replace_first(base, "");
 		if (bd.begins_with("/")) {
 			return _get_root_string() + bd.substr(1, bd.length());
@@ -196,10 +199,10 @@ String DirAccessWindows::get_current_dir(bool p_include_drive) {
 	if (p_include_drive) {
 		return current_dir;
 	} else {
-		if (_get_root_string() == "") {
-			int p = current_dir.find(":");
-			if (p != -1) {
-				return current_dir.substr(p + 1);
+		if (_get_root_string().is_empty()) {
+			int pos = current_dir.find(":");
+			if (pos != -1) {
+				return current_dir.substr(pos + 1);
 			}
 		}
 		return current_dir;
@@ -210,7 +213,7 @@ bool DirAccessWindows::file_exists(String p_file) {
 	GLOBAL_LOCK_FUNCTION
 
 	if (!p_file.is_absolute_path()) {
-		p_file = get_current_dir().plus_file(p_file);
+		p_file = get_current_dir().path_join(p_file);
 	}
 
 	p_file = fix_path(p_file);
@@ -229,7 +232,7 @@ bool DirAccessWindows::dir_exists(String p_dir) {
 	GLOBAL_LOCK_FUNCTION
 
 	if (p_dir.is_relative_path()) {
-		p_dir = get_current_dir().plus_file(p_dir);
+		p_dir = get_current_dir().path_join(p_dir);
 	}
 
 	p_dir = fix_path(p_dir);
@@ -244,13 +247,13 @@ bool DirAccessWindows::dir_exists(String p_dir) {
 
 Error DirAccessWindows::rename(String p_path, String p_new_path) {
 	if (p_path.is_relative_path()) {
-		p_path = get_current_dir().plus_file(p_path);
+		p_path = get_current_dir().path_join(p_path);
 	}
 
 	p_path = fix_path(p_path);
 
 	if (p_new_path.is_relative_path()) {
-		p_new_path = get_current_dir().plus_file(p_new_path);
+		p_new_path = get_current_dir().path_join(p_new_path);
 	}
 
 	p_new_path = fix_path(p_new_path);
@@ -288,7 +291,7 @@ Error DirAccessWindows::rename(String p_path, String p_new_path) {
 
 Error DirAccessWindows::remove(String p_path) {
 	if (p_path.is_relative_path()) {
-		p_path = get_current_dir().plus_file(p_path);
+		p_path = get_current_dir().path_join(p_path);
 	}
 
 	p_path = fix_path(p_path);
@@ -306,39 +309,13 @@ Error DirAccessWindows::remove(String p_path) {
 	}
 }
 
-/*
-
-FileType DirAccessWindows::get_file_type(const String& p_file) const {
-	WCHAR real_current_dir_name[2048];
-	GetCurrentDirectoryW(2048, real_current_dir_name);
-	String prev_dir = Strong::utf16((const char16_t *)real_current_dir_name);
-
-	bool worked = SetCurrentDirectoryW((LPCWSTR)(current_dir.utf16().get_data()));
-
-	DWORD attr;
-	if (worked) {
-		WIN32_FILE_ATTRIBUTE_DATA fileInfo;
-		attr = GetFileAttributesExW((LPCWSTR)(p_file.utf16().get_data()), GetFileExInfoStandard, &fileInfo);
-	}
-
-	SetCurrentDirectoryW((LPCWSTR)(prev_dir.utf16().get_data()));
-
-	if (!worked) {
-		return FILE_TYPE_NONE;
-	}
-
-	return (attr & FILE_ATTRIBUTE_DIRECTORY) ? FILE_TYPE_
-}
-
-*/
-
 uint64_t DirAccessWindows::get_space_left() {
 	uint64_t bytes = 0;
 	if (!GetDiskFreeSpaceEx(nullptr, (PULARGE_INTEGER)&bytes, nullptr, nullptr)) {
 		return 0;
 	}
 
-	//this is either 0 or a value in bytes.
+	// This is either 0 or a value in bytes.
 	return bytes;
 }
 
@@ -348,6 +325,10 @@ String DirAccessWindows::get_filesystem_type() const {
 	int unit_end = path.find(":");
 	ERR_FAIL_COND_V(unit_end == -1, String());
 	String unit = path.substr(0, unit_end + 1) + "\\";
+
+	if (path.is_network_share_path()) {
+		return "Network Share";
+	}
 
 	WCHAR szVolumeName[100];
 	WCHAR szFileSystemName[10];
@@ -395,6 +376,8 @@ DirAccessWindows::DirAccessWindows() {
 }
 
 DirAccessWindows::~DirAccessWindows() {
+	list_dir_end();
+
 	memdelete(p);
 }
 

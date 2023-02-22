@@ -1,32 +1,32 @@
-/*************************************************************************/
-/*  renderer_canvas_cull.cpp                                             */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  renderer_canvas_cull.cpp                                              */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #include "renderer_canvas_cull.h"
 
@@ -34,20 +34,21 @@
 #include "renderer_viewport.h"
 #include "rendering_server_default.h"
 #include "rendering_server_globals.h"
+#include "servers/rendering/storage/texture_storage.h"
 
 static const int z_range = RS::CANVAS_ITEM_Z_MAX - RS::CANVAS_ITEM_Z_MIN + 1;
 
-void RendererCanvasCull::_render_canvas_item_tree(RID p_to_render_target, Canvas::ChildItem *p_child_items, int p_child_item_count, Item *p_canvas_item, const Transform2D &p_transform, const Rect2 &p_clip_rect, const Color &p_modulate, RendererCanvasRender::Light *p_lights, RendererCanvasRender::Light *p_directional_lights, RenderingServer::CanvasItemTextureFilter p_default_filter, RenderingServer::CanvasItemTextureRepeat p_default_repeat, bool p_snap_2d_vertices_to_pixel) {
+void RendererCanvasCull::_render_canvas_item_tree(RID p_to_render_target, Canvas::ChildItem *p_child_items, int p_child_item_count, Item *p_canvas_item, const Transform2D &p_transform, const Rect2 &p_clip_rect, const Color &p_modulate, RendererCanvasRender::Light *p_lights, RendererCanvasRender::Light *p_directional_lights, RenderingServer::CanvasItemTextureFilter p_default_filter, RenderingServer::CanvasItemTextureRepeat p_default_repeat, bool p_snap_2d_vertices_to_pixel, uint32_t canvas_cull_mask) {
 	RENDER_TIMESTAMP("Cull CanvasItem Tree");
 
 	memset(z_list, 0, z_range * sizeof(RendererCanvasRender::Item *));
 	memset(z_last_list, 0, z_range * sizeof(RendererCanvasRender::Item *));
 
 	for (int i = 0; i < p_child_item_count; i++) {
-		_cull_canvas_item(p_child_items[i].item, p_transform, p_clip_rect, Color(1, 1, 1, 1), 0, z_list, z_last_list, nullptr, nullptr, true);
+		_cull_canvas_item(p_child_items[i].item, p_transform, p_clip_rect, Color(1, 1, 1, 1), 0, z_list, z_last_list, nullptr, nullptr, true, canvas_cull_mask);
 	}
 	if (p_canvas_item) {
-		_cull_canvas_item(p_canvas_item, p_transform, p_clip_rect, Color(1, 1, 1, 1), 0, z_list, z_last_list, nullptr, nullptr, true);
+		_cull_canvas_item(p_canvas_item, p_transform, p_clip_rect, Color(1, 1, 1, 1), 0, z_list, z_last_list, nullptr, nullptr, true, canvas_cull_mask);
 	}
 
 	RendererCanvasRender::Item *list = nullptr;
@@ -66,7 +67,7 @@ void RendererCanvasCull::_render_canvas_item_tree(RID p_to_render_target, Canvas
 		}
 	}
 
-	RENDER_TIMESTAMP("Render Canvas Items");
+	RENDER_TIMESTAMP("Render CanvasItems");
 
 	bool sdf_flag;
 	RSG::canvas_render->canvas_render_items(p_to_render_target, list, p_modulate, p_lights, p_directional_lights, p_transform, p_default_filter, p_default_repeat, p_snap_2d_vertices_to_pixel, sdf_flag);
@@ -75,23 +76,32 @@ void RendererCanvasCull::_render_canvas_item_tree(RID p_to_render_target, Canvas
 	}
 }
 
-void _collect_ysort_children(RendererCanvasCull::Item *p_canvas_item, Transform2D p_transform, RendererCanvasCull::Item *p_material_owner, RendererCanvasCull::Item **r_items, int &r_index) {
+void _collect_ysort_children(RendererCanvasCull::Item *p_canvas_item, Transform2D p_transform, RendererCanvasCull::Item *p_material_owner, RendererCanvasCull::Item **r_items, int &r_index, int p_z) {
 	int child_item_count = p_canvas_item->child_items.size();
 	RendererCanvasCull::Item **child_items = p_canvas_item->child_items.ptrw();
 	for (int i = 0; i < child_item_count; i++) {
+		int abs_z = 0;
 		if (child_items[i]->visible) {
 			if (r_items) {
 				r_items[r_index] = child_items[i];
 				child_items[i]->ysort_xform = p_transform;
-				child_items[i]->ysort_pos = p_transform.xform(child_items[i]->xform.elements[2]);
+				child_items[i]->ysort_pos = p_transform.xform(child_items[i]->xform.columns[2]);
 				child_items[i]->material_owner = child_items[i]->use_parent_material ? p_material_owner : nullptr;
 				child_items[i]->ysort_index = r_index;
+				child_items[i]->ysort_parent_abs_z_index = p_z;
+
+				// Y sorted canvas items are flattened into r_items. Calculate their absolute z index to use when rendering r_items.
+				if (child_items[i]->z_relative) {
+					abs_z = CLAMP(p_z + child_items[i]->z_index, RS::CANVAS_ITEM_Z_MIN, RS::CANVAS_ITEM_Z_MAX);
+				} else {
+					abs_z = child_items[i]->z_index;
+				}
 			}
 
 			r_index++;
 
 			if (child_items[i]->sort_y) {
-				_collect_ysort_children(child_items[i], p_transform * child_items[i]->xform, child_items[i]->use_parent_material ? p_material_owner : child_items[i], r_items, r_index);
+				_collect_ysort_children(child_items[i], p_transform * child_items[i]->xform, child_items[i]->use_parent_material ? p_material_owner : child_items[i], r_items, r_index, abs_z);
 			}
 		}
 	}
@@ -104,16 +114,16 @@ void _mark_ysort_dirty(RendererCanvasCull::Item *ysort_owner, RID_Owner<Renderer
 	} while (ysort_owner && ysort_owner->sort_y);
 }
 
-void RendererCanvasCull::_attach_canvas_item_for_draw(RendererCanvasCull::Item *ci, RendererCanvasCull::Item *p_canvas_clip, RendererCanvasRender::Item **z_list, RendererCanvasRender::Item **z_last_list, const Transform2D &xform, const Rect2 &p_clip_rect, Rect2 global_rect, const Color &modulate, int p_z, RendererCanvasCull::Item *p_material_owner, bool use_canvas_group, RendererCanvasRender::Item *canvas_group_from, const Transform2D &p_xform) {
+void RendererCanvasCull::_attach_canvas_item_for_draw(RendererCanvasCull::Item *ci, RendererCanvasCull::Item *p_canvas_clip, RendererCanvasRender::Item **r_z_list, RendererCanvasRender::Item **r_z_last_list, const Transform2D &xform, const Rect2 &p_clip_rect, Rect2 global_rect, const Color &modulate, int p_z, RendererCanvasCull::Item *p_material_owner, bool p_use_canvas_group, RendererCanvasRender::Item *canvas_group_from, const Transform2D &p_xform) {
 	if (ci->copy_back_buffer) {
 		ci->copy_back_buffer->screen_rect = xform.xform(ci->copy_back_buffer->rect).intersection(p_clip_rect);
 	}
 
-	if (use_canvas_group) {
+	if (p_use_canvas_group) {
 		int zidx = p_z - RS::CANVAS_ITEM_Z_MIN;
 		if (canvas_group_from == nullptr) {
 			// no list before processing this item, means must put stuff in group from the beginning of list.
-			canvas_group_from = z_list[zidx];
+			canvas_group_from = r_z_list[zidx];
 		} else {
 			// there was a list before processing, so begin group from this one.
 			canvas_group_from = canvas_group_from->next;
@@ -137,8 +147,7 @@ void RendererCanvasCull::_attach_canvas_item_for_draw(RendererCanvasCull::Item *
 
 			// We have two choices now, if user has drawn something, we must assume users wants to draw the "mask", so compute the size based on this.
 			// If nothing has been drawn, we just take it over and draw it ourselves.
-			if (ci->canvas_group->fit_empty && (ci->commands == nullptr ||
-													   (ci->commands->next == nullptr && ci->commands->type == RendererCanvasCull::Item::Command::TYPE_RECT && (static_cast<RendererCanvasCull::Item::CommandRect *>(ci->commands)->flags & RendererCanvasRender::CANVAS_RECT_IS_GROUP)))) {
+			if (ci->canvas_group->fit_empty && (ci->commands == nullptr || (ci->commands->next == nullptr && ci->commands->type == RendererCanvasCull::Item::Command::TYPE_RECT && (static_cast<RendererCanvasCull::Item::CommandRect *>(ci->commands)->flags & RendererCanvasRender::CANVAS_RECT_IS_GROUP)))) {
 				// No commands, or sole command is the one used to draw, so we (re)create the draw command.
 				ci->clear();
 
@@ -180,7 +189,7 @@ void RendererCanvasCull::_attach_canvas_item_for_draw(RendererCanvasCull::Item *
 			RenderingServerDefault::redraw_request();
 		}
 
-		if (ci->commands != nullptr) {
+		if (ci->commands != nullptr || ci->copy_back_buffer) {
 			ci->final_transform = xform;
 			ci->final_modulate = modulate * ci->self_modulate;
 			ci->global_rect_cache = global_rect;
@@ -189,13 +198,13 @@ void RendererCanvasCull::_attach_canvas_item_for_draw(RendererCanvasCull::Item *
 
 			int zidx = p_z - RS::CANVAS_ITEM_Z_MIN;
 
-			if (z_last_list[zidx]) {
-				z_last_list[zidx]->next = ci;
-				z_last_list[zidx] = ci;
+			if (r_z_last_list[zidx]) {
+				r_z_last_list[zidx]->next = ci;
+				r_z_last_list[zidx] = ci;
 
 			} else {
-				z_list[zidx] = ci;
-				z_last_list[zidx] = ci;
+				r_z_list[zidx] = ci;
+				r_z_last_list[zidx] = ci;
 			}
 
 			ci->z_final = p_z;
@@ -214,10 +223,14 @@ void RendererCanvasCull::_attach_canvas_item_for_draw(RendererCanvasCull::Item *
 	}
 }
 
-void RendererCanvasCull::_cull_canvas_item(Item *p_canvas_item, const Transform2D &p_transform, const Rect2 &p_clip_rect, const Color &p_modulate, int p_z, RendererCanvasRender::Item **z_list, RendererCanvasRender::Item **z_last_list, Item *p_canvas_clip, Item *p_material_owner, bool allow_y_sort) {
+void RendererCanvasCull::_cull_canvas_item(Item *p_canvas_item, const Transform2D &p_transform, const Rect2 &p_clip_rect, const Color &p_modulate, int p_z, RendererCanvasRender::Item **r_z_list, RendererCanvasRender::Item **r_z_last_list, Item *p_canvas_clip, Item *p_material_owner, bool allow_y_sort, uint32_t canvas_cull_mask) {
 	Item *ci = p_canvas_item;
 
 	if (!ci->visible) {
+		return;
+	}
+
+	if (!(ci->visibility_layer & canvas_cull_mask)) {
 		return;
 	}
 
@@ -236,7 +249,7 @@ void RendererCanvasCull::_cull_canvas_item(Item *p_canvas_item, const Transform2
 
 	Transform2D xform = ci->xform;
 	if (snapping_2d_transforms_to_pixel) {
-		xform.elements[2] = xform.elements[2].floor();
+		xform.columns[2] = xform.columns[2].floor();
 	}
 	xform = p_transform * xform;
 
@@ -263,7 +276,11 @@ void RendererCanvasCull::_cull_canvas_item(Item *p_canvas_item, const Transform2
 		if (p_canvas_clip != nullptr) {
 			ci->final_clip_rect = p_canvas_clip->final_clip_rect.intersection(global_rect);
 		} else {
-			ci->final_clip_rect = global_rect;
+			ci->final_clip_rect = p_clip_rect.intersection(global_rect);
+		}
+		if (ci->final_clip_rect.size.width < 0.5 || ci->final_clip_rect.size.height < 0.5) {
+			// The clip rect area is 0, so don't draw the item.
+			return;
 		}
 		ci->final_clip_rect.position = ci->final_clip_rect.position.round();
 		ci->final_clip_rect.size = ci->final_clip_rect.size.round();
@@ -273,6 +290,7 @@ void RendererCanvasCull::_cull_canvas_item(Item *p_canvas_item, const Transform2
 		ci->final_clip_owner = p_canvas_clip;
 	}
 
+	int parent_z = p_z;
 	if (ci->z_relative) {
 		p_z = CLAMP(p_z + ci->z_index, RS::CANVAS_ITEM_Z_MIN, RS::CANVAS_ITEM_Z_MAX);
 	} else {
@@ -283,59 +301,60 @@ void RendererCanvasCull::_cull_canvas_item(Item *p_canvas_item, const Transform2
 		if (allow_y_sort) {
 			if (ci->ysort_children_count == -1) {
 				ci->ysort_children_count = 0;
-				_collect_ysort_children(ci, Transform2D(), p_material_owner, nullptr, ci->ysort_children_count);
+				_collect_ysort_children(ci, Transform2D(), p_material_owner, nullptr, ci->ysort_children_count, p_z);
 			}
 
 			child_item_count = ci->ysort_children_count + 1;
 			child_items = (Item **)alloca(child_item_count * sizeof(Item *));
 
+			ci->ysort_parent_abs_z_index = parent_z;
 			child_items[0] = ci;
 			int i = 1;
-			_collect_ysort_children(ci, Transform2D(), p_material_owner, child_items, i);
+			_collect_ysort_children(ci, Transform2D(), p_material_owner, child_items, i, p_z);
 			ci->ysort_xform = ci->xform.affine_inverse();
 
 			SortArray<Item *, ItemPtrSort> sorter;
 			sorter.sort(child_items, child_item_count);
 
 			for (i = 0; i < child_item_count; i++) {
-				_cull_canvas_item(child_items[i], xform * child_items[i]->ysort_xform, p_clip_rect, modulate, p_z, z_list, z_last_list, (Item *)ci->final_clip_owner, (Item *)child_items[i]->material_owner, false);
+				_cull_canvas_item(child_items[i], xform * child_items[i]->ysort_xform, p_clip_rect, modulate, child_items[i]->ysort_parent_abs_z_index, r_z_list, r_z_last_list, (Item *)ci->final_clip_owner, (Item *)child_items[i]->material_owner, false, canvas_cull_mask);
 			}
 		} else {
 			RendererCanvasRender::Item *canvas_group_from = nullptr;
 			bool use_canvas_group = ci->canvas_group != nullptr && (ci->canvas_group->fit_empty || ci->commands != nullptr);
 			if (use_canvas_group) {
 				int zidx = p_z - RS::CANVAS_ITEM_Z_MIN;
-				canvas_group_from = z_last_list[zidx];
+				canvas_group_from = r_z_last_list[zidx];
 			}
 
-			_attach_canvas_item_for_draw(ci, p_canvas_clip, z_list, z_last_list, xform, p_clip_rect, global_rect, modulate, p_z, p_material_owner, use_canvas_group, canvas_group_from, xform);
+			_attach_canvas_item_for_draw(ci, p_canvas_clip, r_z_list, r_z_last_list, xform, p_clip_rect, global_rect, modulate, p_z, p_material_owner, use_canvas_group, canvas_group_from, xform);
 		}
 	} else {
 		RendererCanvasRender::Item *canvas_group_from = nullptr;
 		bool use_canvas_group = ci->canvas_group != nullptr && (ci->canvas_group->fit_empty || ci->commands != nullptr);
 		if (use_canvas_group) {
 			int zidx = p_z - RS::CANVAS_ITEM_Z_MIN;
-			canvas_group_from = z_last_list[zidx];
+			canvas_group_from = r_z_last_list[zidx];
 		}
 
 		for (int i = 0; i < child_item_count; i++) {
 			if (!child_items[i]->behind && !use_canvas_group) {
 				continue;
 			}
-			_cull_canvas_item(child_items[i], xform, p_clip_rect, modulate, p_z, z_list, z_last_list, (Item *)ci->final_clip_owner, p_material_owner, true);
+			_cull_canvas_item(child_items[i], xform, p_clip_rect, modulate, p_z, r_z_list, r_z_last_list, (Item *)ci->final_clip_owner, p_material_owner, true, canvas_cull_mask);
 		}
-		_attach_canvas_item_for_draw(ci, p_canvas_clip, z_list, z_last_list, xform, p_clip_rect, global_rect, modulate, p_z, p_material_owner, use_canvas_group, canvas_group_from, xform);
+		_attach_canvas_item_for_draw(ci, p_canvas_clip, r_z_list, r_z_last_list, xform, p_clip_rect, global_rect, modulate, p_z, p_material_owner, use_canvas_group, canvas_group_from, xform);
 		for (int i = 0; i < child_item_count; i++) {
 			if (child_items[i]->behind || use_canvas_group) {
 				continue;
 			}
-			_cull_canvas_item(child_items[i], xform, p_clip_rect, modulate, p_z, z_list, z_last_list, (Item *)ci->final_clip_owner, p_material_owner, true);
+			_cull_canvas_item(child_items[i], xform, p_clip_rect, modulate, p_z, r_z_list, r_z_last_list, (Item *)ci->final_clip_owner, p_material_owner, true, canvas_cull_mask);
 		}
 	}
 }
 
-void RendererCanvasCull::render_canvas(RID p_render_target, Canvas *p_canvas, const Transform2D &p_transform, RendererCanvasRender::Light *p_lights, RendererCanvasRender::Light *p_directional_lights, const Rect2 &p_clip_rect, RenderingServer::CanvasItemTextureFilter p_default_filter, RenderingServer::CanvasItemTextureRepeat p_default_repeat, bool p_snap_2d_transforms_to_pixel, bool p_snap_2d_vertices_to_pixel) {
-	RENDER_TIMESTAMP(">Render Canvas");
+void RendererCanvasCull::render_canvas(RID p_render_target, Canvas *p_canvas, const Transform2D &p_transform, RendererCanvasRender::Light *p_lights, RendererCanvasRender::Light *p_directional_lights, const Rect2 &p_clip_rect, RenderingServer::CanvasItemTextureFilter p_default_filter, RenderingServer::CanvasItemTextureRepeat p_default_repeat, bool p_snap_2d_transforms_to_pixel, bool p_snap_2d_vertices_to_pixel, uint32_t canvas_cull_mask) {
+	RENDER_TIMESTAMP("> Render Canvas");
 
 	sdf_used = false;
 	snapping_2d_transforms_to_pixel = p_snap_2d_transforms_to_pixel;
@@ -357,31 +376,31 @@ void RendererCanvasCull::render_canvas(RID p_render_target, Canvas *p_canvas, co
 	}
 
 	if (!has_mirror) {
-		_render_canvas_item_tree(p_render_target, ci, l, nullptr, p_transform, p_clip_rect, p_canvas->modulate, p_lights, p_directional_lights, p_default_filter, p_default_repeat, p_snap_2d_vertices_to_pixel);
+		_render_canvas_item_tree(p_render_target, ci, l, nullptr, p_transform, p_clip_rect, p_canvas->modulate, p_lights, p_directional_lights, p_default_filter, p_default_repeat, p_snap_2d_vertices_to_pixel, canvas_cull_mask);
 
 	} else {
 		//used for parallaxlayer mirroring
 		for (int i = 0; i < l; i++) {
 			const Canvas::ChildItem &ci2 = p_canvas->child_items[i];
-			_render_canvas_item_tree(p_render_target, nullptr, 0, ci2.item, p_transform, p_clip_rect, p_canvas->modulate, p_lights, p_directional_lights, p_default_filter, p_default_repeat, p_snap_2d_vertices_to_pixel);
+			_render_canvas_item_tree(p_render_target, nullptr, 0, ci2.item, p_transform, p_clip_rect, p_canvas->modulate, p_lights, p_directional_lights, p_default_filter, p_default_repeat, p_snap_2d_vertices_to_pixel, canvas_cull_mask);
 
 			//mirroring (useful for scrolling backgrounds)
 			if (ci2.mirror.x != 0) {
 				Transform2D xform2 = p_transform * Transform2D(0, Vector2(ci2.mirror.x, 0));
-				_render_canvas_item_tree(p_render_target, nullptr, 0, ci2.item, xform2, p_clip_rect, p_canvas->modulate, p_lights, p_directional_lights, p_default_filter, p_default_repeat, p_snap_2d_vertices_to_pixel);
+				_render_canvas_item_tree(p_render_target, nullptr, 0, ci2.item, xform2, p_clip_rect, p_canvas->modulate, p_lights, p_directional_lights, p_default_filter, p_default_repeat, p_snap_2d_vertices_to_pixel, canvas_cull_mask);
 			}
 			if (ci2.mirror.y != 0) {
 				Transform2D xform2 = p_transform * Transform2D(0, Vector2(0, ci2.mirror.y));
-				_render_canvas_item_tree(p_render_target, nullptr, 0, ci2.item, xform2, p_clip_rect, p_canvas->modulate, p_lights, p_directional_lights, p_default_filter, p_default_repeat, p_snap_2d_vertices_to_pixel);
+				_render_canvas_item_tree(p_render_target, nullptr, 0, ci2.item, xform2, p_clip_rect, p_canvas->modulate, p_lights, p_directional_lights, p_default_filter, p_default_repeat, p_snap_2d_vertices_to_pixel, canvas_cull_mask);
 			}
 			if (ci2.mirror.y != 0 && ci2.mirror.x != 0) {
 				Transform2D xform2 = p_transform * Transform2D(0, ci2.mirror);
-				_render_canvas_item_tree(p_render_target, nullptr, 0, ci2.item, xform2, p_clip_rect, p_canvas->modulate, p_lights, p_directional_lights, p_default_filter, p_default_repeat, p_snap_2d_vertices_to_pixel);
+				_render_canvas_item_tree(p_render_target, nullptr, 0, ci2.item, xform2, p_clip_rect, p_canvas->modulate, p_lights, p_directional_lights, p_default_filter, p_default_repeat, p_snap_2d_vertices_to_pixel, canvas_cull_mask);
 			}
 		}
 	}
 
-	RENDER_TIMESTAMP("<End Render Canvas");
+	RENDER_TIMESTAMP("< Render Canvas");
 }
 
 bool RendererCanvasCull::was_sdf_used() {
@@ -498,6 +517,20 @@ void RendererCanvasCull::canvas_item_set_transform(RID p_item, const Transform2D
 	canvas_item->xform = p_transform;
 }
 
+void RendererCanvasCull::canvas_item_set_visibility_layer(RID p_item, uint32_t p_visibility_layer) {
+	Item *canvas_item = canvas_item_owner.get_or_null(p_item);
+	ERR_FAIL_COND(!canvas_item);
+
+	canvas_item->visibility_layer = p_visibility_layer;
+}
+
+uint32_t RendererCanvasCull::canvas_item_get_visibility_layer(RID p_item) {
+	Item *canvas_item = canvas_item_owner.get_or_null(p_item);
+	if (!canvas_item)
+		return 0;
+	return canvas_item->visibility_layer;
+}
+
 void RendererCanvasCull::canvas_item_set_clip(RID p_item, bool p_clip) {
 	Item *canvas_item = canvas_item_owner.get_or_null(p_item);
 	ERR_FAIL_COND(!canvas_item);
@@ -548,27 +581,235 @@ void RendererCanvasCull::canvas_item_set_update_when_visible(RID p_item, bool p_
 	canvas_item->update_when_visible = p_update;
 }
 
-void RendererCanvasCull::canvas_item_add_line(RID p_item, const Point2 &p_from, const Point2 &p_to, const Color &p_color, float p_width) {
+void RendererCanvasCull::canvas_item_add_line(RID p_item, const Point2 &p_from, const Point2 &p_to, const Color &p_color, float p_width, bool p_antialiased) {
 	Item *canvas_item = canvas_item_owner.get_or_null(p_item);
 	ERR_FAIL_COND(!canvas_item);
 
 	Item::CommandPrimitive *line = canvas_item->alloc_command<Item::CommandPrimitive>();
 	ERR_FAIL_COND(!line);
-	if (p_width > 1.001) {
-		Vector2 t = (p_from - p_to).orthogonal().normalized() * p_width * 0.5;
-		line->points[0] = p_from + t;
-		line->points[1] = p_from - t;
-		line->points[2] = p_to - t;
-		line->points[3] = p_to + t;
+
+	Vector2 diff = (p_from - p_to);
+	Vector2 dir = diff.orthogonal().normalized();
+	Vector2 t = dir * p_width * 0.5;
+
+	Vector2 begin_left;
+	Vector2 begin_right;
+	Vector2 end_left;
+	Vector2 end_right;
+
+	if (p_width >= 0.0) {
+		begin_left = p_from + t;
+		begin_right = p_from - t;
+		end_left = p_to + t;
+		end_right = p_to - t;
+
+		line->points[0] = begin_left;
+		line->points[1] = begin_right;
+		line->points[2] = end_right;
+		line->points[3] = end_left;
 		line->point_count = 4;
 	} else {
-		line->point_count = 2;
+		begin_left = p_from;
+		begin_right = p_from;
+		end_left = p_to;
+		end_right = p_to;
+
 		line->points[0] = p_from;
 		line->points[1] = p_to;
+		line->point_count = 2;
 	}
 	for (uint32_t i = 0; i < line->point_count; i++) {
 		line->colors[i] = p_color;
 	}
+
+	if (p_antialiased) {
+		// Use the same antialiasing feather size as StyleBoxFlat's default
+		// (but doubled, as it's specified for both sides here).
+		// This value is empirically determined to provide good antialiasing quality
+		// while not making lines appear too soft.
+		float border_size = 1.25f;
+		if (0.0f <= p_width && p_width < 1.0f) {
+			border_size *= p_width;
+		}
+		Vector2 dir2 = diff.normalized();
+
+		Vector2 border = dir * border_size;
+		Vector2 border2 = dir2 * border_size;
+
+		Color transparent = Color(p_color.r, p_color.g, p_color.b, 0.0);
+
+		{
+			Item::CommandPrimitive *left_border = canvas_item->alloc_command<Item::CommandPrimitive>();
+			ERR_FAIL_COND(!left_border);
+
+			left_border->points[0] = begin_left;
+			left_border->points[1] = begin_left + border;
+			left_border->points[2] = end_left + border;
+			left_border->points[3] = end_left;
+
+			left_border->colors[0] = p_color;
+			left_border->colors[1] = transparent;
+			left_border->colors[2] = transparent;
+			left_border->colors[3] = p_color;
+
+			left_border->point_count = 4;
+		}
+		{
+			Item::CommandPrimitive *right_border = canvas_item->alloc_command<Item::CommandPrimitive>();
+			ERR_FAIL_COND(!right_border);
+
+			right_border->points[0] = begin_right;
+			right_border->points[1] = begin_right - border;
+			right_border->points[2] = end_right - border;
+			right_border->points[3] = end_right;
+
+			right_border->colors[0] = p_color;
+			right_border->colors[1] = transparent;
+			right_border->colors[2] = transparent;
+			right_border->colors[3] = p_color;
+
+			right_border->point_count = 4;
+		}
+		{
+			Item::CommandPrimitive *top_border = canvas_item->alloc_command<Item::CommandPrimitive>();
+			ERR_FAIL_COND(!top_border);
+
+			top_border->points[0] = begin_left;
+			top_border->points[1] = begin_left + border2;
+			top_border->points[2] = begin_right + border2;
+			top_border->points[3] = begin_right;
+
+			top_border->colors[0] = p_color;
+			top_border->colors[1] = transparent;
+			top_border->colors[2] = transparent;
+			top_border->colors[3] = p_color;
+
+			top_border->point_count = 4;
+		}
+		{
+			Item::CommandPrimitive *bottom_border = canvas_item->alloc_command<Item::CommandPrimitive>();
+			ERR_FAIL_COND(!bottom_border);
+
+			bottom_border->points[0] = end_left;
+			bottom_border->points[1] = end_left - border2;
+			bottom_border->points[2] = end_right - border2;
+			bottom_border->points[3] = end_right;
+
+			bottom_border->colors[0] = p_color;
+			bottom_border->colors[1] = transparent;
+			bottom_border->colors[2] = transparent;
+			bottom_border->colors[3] = p_color;
+
+			bottom_border->point_count = 4;
+		}
+		{
+			Item::CommandPrimitive *top_left_corner = canvas_item->alloc_command<Item::CommandPrimitive>();
+			ERR_FAIL_COND(!top_left_corner);
+
+			top_left_corner->points[0] = begin_left;
+			top_left_corner->points[1] = begin_left + border2;
+			top_left_corner->points[2] = begin_left + border + border2;
+			top_left_corner->points[3] = begin_left + border;
+
+			top_left_corner->colors[0] = p_color;
+			top_left_corner->colors[1] = transparent;
+			top_left_corner->colors[2] = transparent;
+			top_left_corner->colors[3] = transparent;
+
+			top_left_corner->point_count = 4;
+		}
+		{
+			Item::CommandPrimitive *top_right_corner = canvas_item->alloc_command<Item::CommandPrimitive>();
+			ERR_FAIL_COND(!top_right_corner);
+
+			top_right_corner->points[0] = begin_right;
+			top_right_corner->points[1] = begin_right + border2;
+			top_right_corner->points[2] = begin_right - border + border2;
+			top_right_corner->points[3] = begin_right - border;
+
+			top_right_corner->colors[0] = p_color;
+			top_right_corner->colors[1] = transparent;
+			top_right_corner->colors[2] = transparent;
+			top_right_corner->colors[3] = transparent;
+
+			top_right_corner->point_count = 4;
+		}
+		{
+			Item::CommandPrimitive *bottom_left_corner = canvas_item->alloc_command<Item::CommandPrimitive>();
+			ERR_FAIL_COND(!bottom_left_corner);
+
+			bottom_left_corner->points[0] = end_left;
+			bottom_left_corner->points[1] = end_left - border2;
+			bottom_left_corner->points[2] = end_left + border - border2;
+			bottom_left_corner->points[3] = end_left + border;
+
+			bottom_left_corner->colors[0] = p_color;
+			bottom_left_corner->colors[1] = transparent;
+			bottom_left_corner->colors[2] = transparent;
+			bottom_left_corner->colors[3] = transparent;
+
+			bottom_left_corner->point_count = 4;
+		}
+		{
+			Item::CommandPrimitive *bottom_right_corner = canvas_item->alloc_command<Item::CommandPrimitive>();
+			ERR_FAIL_COND(!bottom_right_corner);
+
+			bottom_right_corner->points[0] = end_right;
+			bottom_right_corner->points[1] = end_right - border2;
+			bottom_right_corner->points[2] = end_right - border - border2;
+			bottom_right_corner->points[3] = end_right - border;
+
+			bottom_right_corner->colors[0] = p_color;
+			bottom_right_corner->colors[1] = transparent;
+			bottom_right_corner->colors[2] = transparent;
+			bottom_right_corner->colors[3] = transparent;
+
+			bottom_right_corner->point_count = 4;
+		}
+	}
+}
+
+static Vector2 compute_polyline_segment_dir(const Vector<Point2> &p_points, int p_index, const Vector2 &p_prev_segment_dir) {
+	int point_count = p_points.size();
+
+	bool is_last_point = (p_index == point_count - 1);
+
+	Vector2 segment_dir;
+
+	if (is_last_point) {
+		segment_dir = p_prev_segment_dir;
+	} else {
+		segment_dir = (p_points[p_index + 1] - p_points[p_index]).normalized();
+
+		if (segment_dir.is_zero_approx()) {
+			segment_dir = p_prev_segment_dir;
+		}
+	}
+
+	return segment_dir;
+}
+
+static Vector2 compute_polyline_edge_offset_clamped(const Vector2 &p_segment_dir, const Vector2 &p_prev_segment_dir) {
+	Vector2 bisector;
+	float length = 1.0f;
+
+	bisector = (p_prev_segment_dir * p_segment_dir.length() - p_segment_dir * p_prev_segment_dir.length()).normalized();
+
+	float angle = atan2f(bisector.cross(p_prev_segment_dir), bisector.dot(p_prev_segment_dir));
+	float sin_angle = sinf(angle);
+
+	if (!Math::is_zero_approx(sin_angle) && !p_segment_dir.is_equal_approx(p_prev_segment_dir)) {
+		length = 1.0f / sin_angle;
+		length = CLAMP(length, -3.0f, 3.0f);
+	} else {
+		bisector = p_segment_dir.orthogonal();
+	}
+
+	if (bisector.is_zero_approx()) {
+		bisector = p_segment_dir.orthogonal();
+	}
+
+	return bisector * length;
 }
 
 void RendererCanvasCull::canvas_item_add_polyline(RID p_item, const Vector<Point2> &p_points, const Vector<Color> &p_colors, float p_width, bool p_antialiased) {
@@ -579,132 +820,355 @@ void RendererCanvasCull::canvas_item_add_polyline(RID p_item, const Vector<Point
 	Color color = Color(1, 1, 1, 1);
 
 	Vector<int> indices;
-	int pc = p_points.size();
-	int pc2 = pc * 2;
-
-	Vector2 prev_t;
-	int j2;
+	int point_count = p_points.size();
 
 	Item::CommandPolygon *pline = canvas_item->alloc_command<Item::CommandPolygon>();
 	ERR_FAIL_COND(!pline);
 
+	if (p_width < 0) {
+		if (p_antialiased) {
+			WARN_PRINT("Antialiasing is not supported for thin polylines drawn using line strips (`p_width < 0`).");
+		}
+
+		pline->primitive = RS::PRIMITIVE_LINE_STRIP;
+
+		if (p_colors.size() == 1 || p_colors.size() == point_count) {
+			pline->polygon.create(indices, p_points, p_colors);
+		} else {
+			Vector<Color> colors;
+			if (p_colors.is_empty()) {
+				colors.push_back(color);
+			} else {
+				colors.resize(point_count);
+				Color *colors_ptr = colors.ptrw();
+				for (int i = 0; i < point_count; i++) {
+					if (i < p_colors.size()) {
+						color = p_colors[i];
+					}
+					colors_ptr[i] = color;
+				}
+			}
+			pline->polygon.create(indices, p_points, colors);
+		}
+		return;
+	}
+
+	int polyline_point_count = point_count * 2;
+
+	bool loop = p_points[0].is_equal_approx(p_points[point_count - 1]);
+	Vector2 first_segment_dir;
+	Vector2 last_segment_dir;
+
+	// Search for first non-zero vector between two segments.
+	for (int i = 1; i < point_count; i++) {
+		first_segment_dir = (p_points[i] - p_points[i - 1]).normalized();
+
+		if (!first_segment_dir.is_zero_approx()) {
+			break;
+		}
+	}
+
+	// Search for last non-zero vector between two segments.
+	for (int i = point_count - 1; i >= 1; i--) {
+		last_segment_dir = (p_points[i] - p_points[i - 1]).normalized();
+
+		if (!last_segment_dir.is_zero_approx()) {
+			break;
+		}
+	}
+
 	PackedColorArray colors;
 	PackedVector2Array points;
 
-	colors.resize(pc2);
-	points.resize(pc2);
+	colors.resize(polyline_point_count);
+	points.resize(polyline_point_count);
 
 	Vector2 *points_ptr = points.ptrw();
 	Color *colors_ptr = colors.ptrw();
 
 	if (p_antialiased) {
+		// Use the same antialiasing feather size as StyleBoxFlat's default
+		// (but doubled, as it's specified for both sides here).
+		// This value is empirically determined to provide good antialiasing quality
+		// while not making lines appear too soft.
+		float border_size = 1.25f;
+		if (p_width < 1.0f) {
+			border_size *= p_width;
+		}
 		Color color2 = Color(1, 1, 1, 0);
 
-		PackedColorArray colors_top;
-		PackedVector2Array points_top;
+		PackedColorArray colors_begin;
+		PackedVector2Array points_begin;
 
-		colors_top.resize(pc2);
-		points_top.resize(pc2);
+		colors_begin.resize(4);
+		points_begin.resize(4);
 
-		PackedColorArray colors_bottom;
-		PackedVector2Array points_bottom;
+		PackedColorArray colors_begin_left_corner;
+		PackedVector2Array points_begin_left_corner;
 
-		colors_bottom.resize(pc2);
-		points_bottom.resize(pc2);
+		colors_begin_left_corner.resize(4);
+		points_begin_left_corner.resize(4);
 
-		Item::CommandPolygon *pline_top = canvas_item->alloc_command<Item::CommandPolygon>();
-		ERR_FAIL_COND(!pline_top);
+		PackedColorArray colors_begin_right_corner;
+		PackedVector2Array points_begin_right_corner;
 
-		Item::CommandPolygon *pline_bottom = canvas_item->alloc_command<Item::CommandPolygon>();
-		ERR_FAIL_COND(!pline_bottom);
+		colors_begin_right_corner.resize(4);
+		points_begin_right_corner.resize(4);
 
-		//make three trianglestrip's for drawing the antialiased line...
+		PackedColorArray colors_end;
+		PackedVector2Array points_end;
 
-		Vector2 *points_top_ptr = points_top.ptrw();
-		Vector2 *points_bottom_ptr = points_bottom.ptrw();
+		colors_end.resize(4);
+		points_end.resize(4);
 
-		Color *colors_top_ptr = colors_top.ptrw();
-		Color *colors_bottom_ptr = colors_bottom.ptrw();
+		PackedColorArray colors_end_left_corner;
+		PackedVector2Array points_end_left_corner;
 
-		for (int i = 0, j = 0; i < pc; i++, j += 2) {
-			Vector2 t;
-			if (i == pc - 1) {
-				t = prev_t;
-			} else {
-				t = (p_points[i + 1] - p_points[i]).normalized().orthogonal();
-				if (i == 0) {
-					prev_t = t;
-				}
+		colors_end_left_corner.resize(4);
+		points_end_left_corner.resize(4);
+
+		PackedColorArray colors_end_right_corner;
+		PackedVector2Array points_end_right_corner;
+
+		colors_end_right_corner.resize(4);
+		points_end_right_corner.resize(4);
+
+		PackedColorArray colors_left;
+		PackedVector2Array points_left;
+
+		colors_left.resize(polyline_point_count);
+		points_left.resize(polyline_point_count);
+
+		PackedColorArray colors_right;
+		PackedVector2Array points_right;
+
+		colors_right.resize(polyline_point_count);
+		points_right.resize(polyline_point_count);
+
+		Item::CommandPolygon *pline_begin = canvas_item->alloc_command<Item::CommandPolygon>();
+		ERR_FAIL_COND(!pline_begin);
+
+		Item::CommandPolygon *pline_begin_left_corner = canvas_item->alloc_command<Item::CommandPolygon>();
+		ERR_FAIL_COND(!pline_begin_left_corner);
+
+		Item::CommandPolygon *pline_begin_right_corner = canvas_item->alloc_command<Item::CommandPolygon>();
+		ERR_FAIL_COND(!pline_begin_right_corner);
+
+		Item::CommandPolygon *pline_end = canvas_item->alloc_command<Item::CommandPolygon>();
+		ERR_FAIL_COND(!pline_end);
+
+		Item::CommandPolygon *pline_end_left_corner = canvas_item->alloc_command<Item::CommandPolygon>();
+		ERR_FAIL_COND(!pline_end_left_corner);
+
+		Item::CommandPolygon *pline_end_right_corner = canvas_item->alloc_command<Item::CommandPolygon>();
+		ERR_FAIL_COND(!pline_end_right_corner);
+
+		Item::CommandPolygon *pline_left = canvas_item->alloc_command<Item::CommandPolygon>();
+		ERR_FAIL_COND(!pline_left);
+
+		Item::CommandPolygon *pline_right = canvas_item->alloc_command<Item::CommandPolygon>();
+		ERR_FAIL_COND(!pline_right);
+
+		// Makes nine triangle strips for drawing the antialiased line.
+
+		Vector2 *points_begin_ptr = points_begin.ptrw();
+		Vector2 *points_begin_left_corner_ptr = points_begin_left_corner.ptrw();
+		Vector2 *points_begin_right_corner_ptr = points_begin_right_corner.ptrw();
+		Vector2 *points_end_ptr = points_end.ptrw();
+		Vector2 *points_end_left_corner_ptr = points_end_left_corner.ptrw();
+		Vector2 *points_end_right_corner_ptr = points_end_right_corner.ptrw();
+		Vector2 *points_left_ptr = points_left.ptrw();
+		Vector2 *points_right_ptr = points_right.ptrw();
+
+		Color *colors_begin_ptr = colors_begin.ptrw();
+		Color *colors_begin_left_corner_ptr = colors_begin_left_corner.ptrw();
+		Color *colors_begin_right_corner_ptr = colors_begin_right_corner.ptrw();
+		Color *colors_end_ptr = colors_end.ptrw();
+		Color *colors_end_left_corner_ptr = colors_end_left_corner.ptrw();
+		Color *colors_end_right_corner_ptr = colors_end_right_corner.ptrw();
+		Color *colors_left_ptr = colors_left.ptrw();
+		Color *colors_right_ptr = colors_right.ptrw();
+
+		Vector2 prev_segment_dir;
+		for (int i = 0; i < point_count; i++) {
+			bool is_first_point = (i == 0);
+			bool is_last_point = (i == point_count - 1);
+
+			Vector2 segment_dir = compute_polyline_segment_dir(p_points, i, prev_segment_dir);
+			if (is_first_point && loop) {
+				prev_segment_dir = last_segment_dir;
+			} else if (is_last_point && loop) {
+				prev_segment_dir = first_segment_dir;
 			}
 
-			j2 = j + 1;
+			Vector2 base_edge_offset;
+			if (is_first_point && !loop) {
+				base_edge_offset = first_segment_dir.orthogonal();
+			} else if (is_last_point && !loop) {
+				base_edge_offset = last_segment_dir.orthogonal();
+			} else {
+				base_edge_offset = compute_polyline_edge_offset_clamped(segment_dir, prev_segment_dir);
+			}
 
-			Vector2 dir = (t + prev_t).normalized();
-			Vector2 tangent = dir * p_width * 0.5;
-			Vector2 border = dir * 2.0;
+			Vector2 edge_offset = base_edge_offset * (p_width * 0.5f);
+			Vector2 border = base_edge_offset * border_size;
 			Vector2 pos = p_points[i];
 
-			points_ptr[j] = pos + tangent;
-			points_ptr[j2] = pos - tangent;
+			points_ptr[i * 2 + 0] = pos + edge_offset;
+			points_ptr[i * 2 + 1] = pos - edge_offset;
 
-			points_top_ptr[j] = pos + tangent + border;
-			points_top_ptr[j2] = pos + tangent;
+			points_left_ptr[i * 2 + 0] = pos + edge_offset + border;
+			points_left_ptr[i * 2 + 1] = pos + edge_offset;
 
-			points_bottom_ptr[j] = pos - tangent;
-			points_bottom_ptr[j2] = pos - tangent - border;
+			points_right_ptr[i * 2 + 0] = pos - edge_offset;
+			points_right_ptr[i * 2 + 1] = pos - edge_offset - border;
 
 			if (i < p_colors.size()) {
 				color = p_colors[i];
 				color2 = Color(color.r, color.g, color.b, 0);
 			}
 
-			colors_ptr[j] = color;
-			colors_ptr[j2] = color;
+			colors_ptr[i * 2 + 0] = color;
+			colors_ptr[i * 2 + 1] = color;
 
-			colors_top_ptr[j] = color2;
-			colors_top_ptr[j2] = color;
+			colors_left_ptr[i * 2 + 0] = color2;
+			colors_left_ptr[i * 2 + 1] = color;
 
-			colors_bottom_ptr[j] = color;
-			colors_bottom_ptr[j2] = color2;
+			colors_right_ptr[i * 2 + 0] = color;
+			colors_right_ptr[i * 2 + 1] = color2;
 
-			prev_t = t;
-		}
+			if (is_first_point) {
+				Vector2 begin_border = loop ? Vector2() : -segment_dir * border_size;
 
-		pline_top->primitive = RS::PRIMITIVE_TRIANGLE_STRIP;
-		pline_top->polygon.create(indices, points_top, colors_top);
+				points_begin_ptr[0] = pos + edge_offset + begin_border;
+				points_begin_ptr[1] = pos - edge_offset + begin_border;
+				points_begin_ptr[2] = pos + edge_offset;
+				points_begin_ptr[3] = pos - edge_offset;
 
-		pline_bottom->primitive = RS::PRIMITIVE_TRIANGLE_STRIP;
-		pline_bottom->polygon.create(indices, points_bottom, colors_bottom);
-	} else {
-		//make a trianglestrip for drawing the line...
+				colors_begin_ptr[0] = color2;
+				colors_begin_ptr[1] = color2;
+				colors_begin_ptr[2] = color;
+				colors_begin_ptr[3] = color;
 
-		for (int i = 0, j = 0; i < pc; i++, j += 2) {
-			Vector2 t;
-			if (i == pc - 1) {
-				t = prev_t;
-			} else {
-				t = (p_points[i + 1] - p_points[i]).normalized().orthogonal();
-				if (i == 0) {
-					prev_t = t;
-				}
+				points_begin_left_corner_ptr[0] = pos - edge_offset - border;
+				points_begin_left_corner_ptr[1] = pos - edge_offset + begin_border - border;
+				points_begin_left_corner_ptr[2] = pos - edge_offset;
+				points_begin_left_corner_ptr[3] = pos - edge_offset + begin_border;
+
+				colors_begin_left_corner_ptr[0] = color2;
+				colors_begin_left_corner_ptr[1] = color2;
+				colors_begin_left_corner_ptr[2] = color;
+				colors_begin_left_corner_ptr[3] = color2;
+
+				points_begin_right_corner_ptr[0] = pos + edge_offset + begin_border;
+				points_begin_right_corner_ptr[1] = pos + edge_offset + begin_border + border;
+				points_begin_right_corner_ptr[2] = pos + edge_offset;
+				points_begin_right_corner_ptr[3] = pos + edge_offset + border;
+
+				colors_begin_right_corner_ptr[0] = color2;
+				colors_begin_right_corner_ptr[1] = color2;
+				colors_begin_right_corner_ptr[2] = color;
+				colors_begin_right_corner_ptr[3] = color2;
 			}
 
-			j2 = j + 1;
+			if (is_last_point) {
+				Vector2 end_border = loop ? Vector2() : prev_segment_dir * border_size;
 
-			Vector2 tangent = ((t + prev_t).normalized()) * p_width * 0.5;
+				points_end_ptr[0] = pos + edge_offset + end_border;
+				points_end_ptr[1] = pos - edge_offset + end_border;
+				points_end_ptr[2] = pos + edge_offset;
+				points_end_ptr[3] = pos - edge_offset;
+
+				colors_end_ptr[0] = color2;
+				colors_end_ptr[1] = color2;
+				colors_end_ptr[2] = color;
+				colors_end_ptr[3] = color;
+
+				points_end_left_corner_ptr[0] = pos - edge_offset - border;
+				points_end_left_corner_ptr[1] = pos - edge_offset + end_border - border;
+				points_end_left_corner_ptr[2] = pos - edge_offset;
+				points_end_left_corner_ptr[3] = pos - edge_offset + end_border;
+
+				colors_end_left_corner_ptr[0] = color2;
+				colors_end_left_corner_ptr[1] = color2;
+				colors_end_left_corner_ptr[2] = color;
+				colors_end_left_corner_ptr[3] = color2;
+
+				points_end_right_corner_ptr[0] = pos + edge_offset + end_border;
+				points_end_right_corner_ptr[1] = pos + edge_offset + end_border + border;
+				points_end_right_corner_ptr[2] = pos + edge_offset;
+				points_end_right_corner_ptr[3] = pos + edge_offset + border;
+
+				colors_end_right_corner_ptr[0] = color2;
+				colors_end_right_corner_ptr[1] = color2;
+				colors_end_right_corner_ptr[2] = color;
+				colors_end_right_corner_ptr[3] = color2;
+			}
+
+			prev_segment_dir = segment_dir;
+		}
+
+		pline_begin->primitive = RS::PRIMITIVE_TRIANGLE_STRIP;
+		pline_begin->polygon.create(indices, points_begin, colors_begin);
+
+		pline_begin_left_corner->primitive = RS::PRIMITIVE_TRIANGLE_STRIP;
+		pline_begin_left_corner->polygon.create(indices, points_begin_left_corner, colors_begin_left_corner);
+
+		pline_begin_right_corner->primitive = RS::PRIMITIVE_TRIANGLE_STRIP;
+		pline_begin_right_corner->polygon.create(indices, points_begin_right_corner, colors_begin_right_corner);
+
+		pline_end->primitive = RS::PRIMITIVE_TRIANGLE_STRIP;
+		pline_end->polygon.create(indices, points_end, colors_end);
+
+		pline_end_left_corner->primitive = RS::PRIMITIVE_TRIANGLE_STRIP;
+		pline_end_left_corner->polygon.create(indices, points_end_left_corner, colors_end_left_corner);
+
+		pline_end_right_corner->primitive = RS::PRIMITIVE_TRIANGLE_STRIP;
+		pline_end_right_corner->polygon.create(indices, points_end_right_corner, colors_end_right_corner);
+
+		pline_left->primitive = RS::PRIMITIVE_TRIANGLE_STRIP;
+		pline_left->polygon.create(indices, points_left, colors_left);
+
+		pline_right->primitive = RS::PRIMITIVE_TRIANGLE_STRIP;
+		pline_right->polygon.create(indices, points_right, colors_right);
+	} else {
+		// Makes a single triangle strip for drawing the line.
+
+		Vector2 prev_segment_dir;
+		for (int i = 0; i < point_count; i++) {
+			bool is_first_point = (i == 0);
+			bool is_last_point = (i == point_count - 1);
+
+			Vector2 segment_dir = compute_polyline_segment_dir(p_points, i, prev_segment_dir);
+			if (is_first_point && loop) {
+				prev_segment_dir = last_segment_dir;
+			} else if (is_last_point && loop) {
+				prev_segment_dir = first_segment_dir;
+			}
+
+			Vector2 base_edge_offset;
+			if (is_first_point && !loop) {
+				base_edge_offset = first_segment_dir.orthogonal();
+			} else if (is_last_point && !loop) {
+				base_edge_offset = last_segment_dir.orthogonal();
+			} else {
+				base_edge_offset = compute_polyline_edge_offset_clamped(segment_dir, prev_segment_dir);
+			}
+
+			Vector2 edge_offset = base_edge_offset * (p_width * 0.5f);
 			Vector2 pos = p_points[i];
 
-			points_ptr[j] = pos + tangent;
-			points_ptr[j2] = pos - tangent;
+			points_ptr[i * 2 + 0] = pos + edge_offset;
+			points_ptr[i * 2 + 1] = pos - edge_offset;
 
 			if (i < p_colors.size()) {
 				color = p_colors[i];
 			}
 
-			colors_ptr[j] = color;
-			colors_ptr[j2] = color;
+			colors_ptr[i * 2 + 0] = color;
+			colors_ptr[i * 2 + 1] = color;
 
-			prev_t = t;
+			prev_segment_dir = segment_dir;
 		}
 	}
 
@@ -714,18 +1178,36 @@ void RendererCanvasCull::canvas_item_add_polyline(RID p_item, const Vector<Point
 
 void RendererCanvasCull::canvas_item_add_multiline(RID p_item, const Vector<Point2> &p_points, const Vector<Color> &p_colors, float p_width) {
 	ERR_FAIL_COND(p_points.size() < 2);
-	Item *canvas_item = canvas_item_owner.get_or_null(p_item);
-	ERR_FAIL_COND(!canvas_item);
 
-	Item::CommandPolygon *pline = canvas_item->alloc_command<Item::CommandPolygon>();
-	ERR_FAIL_COND(!pline);
+	// TODO: `canvas_item_add_line`(`multiline`, `polyline`) share logic, should factor out.
+	if (p_width < 0) {
+		Item *canvas_item = canvas_item_owner.get_or_null(p_item);
+		ERR_FAIL_COND(!canvas_item);
 
-	if (true || p_width <= 1) {
-#define TODO make thick lines possible
-
+		Item::CommandPolygon *pline = canvas_item->alloc_command<Item::CommandPolygon>();
+		ERR_FAIL_COND(!pline);
 		pline->primitive = RS::PRIMITIVE_LINES;
 		pline->polygon.create(Vector<int>(), p_points, p_colors);
 	} else {
+		if (p_colors.size() == 1) {
+			Color color = p_colors[0];
+			for (int i = 0; i < p_points.size() >> 1; i++) {
+				Vector2 from = p_points[i * 2 + 0];
+				Vector2 to = p_points[i * 2 + 1];
+
+				canvas_item_add_line(p_item, from, to, color, p_width);
+			}
+		} else if (p_colors.size() == p_points.size() >> 1) {
+			for (int i = 0; i < p_points.size() >> 1; i++) {
+				Color color = p_colors[i];
+				Vector2 from = p_points[i * 2 + 0];
+				Vector2 to = p_points[i * 2 + 1];
+
+				canvas_item_add_line(p_item, from, to, color, p_width);
+			}
+		} else {
+			ERR_FAIL_MSG("Length of p_colors is invalid.");
+		}
 	}
 }
 
@@ -754,20 +1236,23 @@ void RendererCanvasCull::canvas_item_add_circle(RID p_item, const Point2 &p_pos,
 	static const int circle_points = 64;
 
 	points.resize(circle_points);
+	Vector2 *points_ptr = points.ptrw();
 	const real_t circle_point_step = Math_TAU / circle_points;
 
 	for (int i = 0; i < circle_points; i++) {
 		float angle = i * circle_point_step;
-		points.write[i].x = Math::cos(angle) * p_radius;
-		points.write[i].y = Math::sin(angle) * p_radius;
-		points.write[i] += p_pos;
+		points_ptr[i].x = Math::cos(angle) * p_radius;
+		points_ptr[i].y = Math::sin(angle) * p_radius;
+		points_ptr[i] += p_pos;
 	}
+
 	indices.resize((circle_points - 2) * 3);
+	int *indices_ptr = indices.ptrw();
 
 	for (int i = 0; i < circle_points - 2; i++) {
-		indices.write[i * 3 + 0] = 0;
-		indices.write[i * 3 + 1] = i + 1;
-		indices.write[i * 3 + 2] = i + 2;
+		indices_ptr[i * 3 + 0] = 0;
+		indices_ptr[i * 3 + 1] = i + 1;
+		indices_ptr[i * 3 + 2] = i + 2;
 	}
 
 	Vector<Color> color;
@@ -787,7 +1272,7 @@ void RendererCanvasCull::canvas_item_add_texture_rect(RID p_item, const Rect2 &p
 	if (p_tile) {
 		rect->flags |= RendererCanvasRender::CANVAS_RECT_TILE;
 		rect->flags |= RendererCanvasRender::CANVAS_RECT_REGION;
-		rect->source = Rect2(0, 0, fabsf(p_rect.size.width), fabsf(p_rect.size.height));
+		rect->source = Rect2(0, 0, ABS(p_rect.size.width), ABS(p_rect.size.height));
 	}
 
 	if (p_rect.size.x < 0) {
@@ -806,7 +1291,7 @@ void RendererCanvasCull::canvas_item_add_texture_rect(RID p_item, const Rect2 &p
 	rect->texture = p_texture;
 }
 
-void RendererCanvasCull::canvas_item_add_msdf_texture_rect_region(RID p_item, const Rect2 &p_rect, RID p_texture, const Rect2 &p_src_rect, const Color &p_modulate, int p_outline_size, float p_px_range) {
+void RendererCanvasCull::canvas_item_add_msdf_texture_rect_region(RID p_item, const Rect2 &p_rect, RID p_texture, const Rect2 &p_src_rect, const Color &p_modulate, int p_outline_size, float p_px_range, float p_scale) {
 	Item *canvas_item = canvas_item_owner.get_or_null(p_item);
 	ERR_FAIL_COND(!canvas_item);
 
@@ -836,8 +1321,40 @@ void RendererCanvasCull::canvas_item_add_msdf_texture_rect_region(RID p_item, co
 		rect->flags ^= RendererCanvasRender::CANVAS_RECT_FLIP_V;
 		rect->source.size.y = -rect->source.size.y;
 	}
-	rect->outline = p_outline_size;
+	rect->outline = (float)p_outline_size / p_scale / 4.0;
 	rect->px_range = p_px_range;
+}
+
+void RendererCanvasCull::canvas_item_add_lcd_texture_rect_region(RID p_item, const Rect2 &p_rect, RID p_texture, const Rect2 &p_src_rect, const Color &p_modulate) {
+	Item *canvas_item = canvas_item_owner.get_or_null(p_item);
+	ERR_FAIL_COND(!canvas_item);
+
+	Item::CommandRect *rect = canvas_item->alloc_command<Item::CommandRect>();
+	ERR_FAIL_COND(!rect);
+	rect->modulate = p_modulate;
+	rect->rect = p_rect;
+
+	rect->texture = p_texture;
+
+	rect->source = p_src_rect;
+	rect->flags = RendererCanvasRender::CANVAS_RECT_REGION | RendererCanvasRender::CANVAS_RECT_LCD;
+
+	if (p_rect.size.x < 0) {
+		rect->flags |= RendererCanvasRender::CANVAS_RECT_FLIP_H;
+		rect->rect.size.x = -rect->rect.size.x;
+	}
+	if (p_src_rect.size.x < 0) {
+		rect->flags ^= RendererCanvasRender::CANVAS_RECT_FLIP_H;
+		rect->source.size.x = -rect->source.size.x;
+	}
+	if (p_rect.size.y < 0) {
+		rect->flags |= RendererCanvasRender::CANVAS_RECT_FLIP_V;
+		rect->rect.size.y = -rect->rect.size.y;
+	}
+	if (p_src_rect.size.y < 0) {
+		rect->flags ^= RendererCanvasRender::CANVAS_RECT_FLIP_V;
+		rect->source.size.y = -rect->source.size.y;
+	}
 }
 
 void RendererCanvasCull::canvas_item_add_texture_rect_region(RID p_item, const Rect2 &p_rect, RID p_texture, const Rect2 &p_src_rect, const Color &p_modulate, bool p_transpose, bool p_clip_uv) {
@@ -902,7 +1419,7 @@ void RendererCanvasCull::canvas_item_add_nine_patch(RID p_item, const Rect2 &p_r
 	style->axis_y = p_y_axis_mode;
 }
 
-void RendererCanvasCull::canvas_item_add_primitive(RID p_item, const Vector<Point2> &p_points, const Vector<Color> &p_colors, const Vector<Point2> &p_uvs, RID p_texture, float p_width) {
+void RendererCanvasCull::canvas_item_add_primitive(RID p_item, const Vector<Point2> &p_points, const Vector<Color> &p_colors, const Vector<Point2> &p_uvs, RID p_texture) {
 	uint32_t pc = p_points.size();
 	ERR_FAIL_COND(pc == 0 || pc > 4);
 
@@ -993,8 +1510,8 @@ void RendererCanvasCull::canvas_item_add_mesh(RID p_item, const RID &p_mesh, con
 	ERR_FAIL_COND(!m);
 	m->mesh = p_mesh;
 	if (canvas_item->skeleton.is_valid()) {
-		m->mesh_instance = RSG::storage->mesh_instance_create(p_mesh);
-		RSG::storage->mesh_instance_set_skeleton(m->mesh_instance, canvas_item->skeleton);
+		m->mesh_instance = RSG::mesh_storage->mesh_instance_create(p_mesh);
+		RSG::mesh_storage->mesh_instance_set_skeleton(m->mesh_instance, canvas_item->skeleton);
 	}
 
 	m->texture = p_texture;
@@ -1014,7 +1531,7 @@ void RendererCanvasCull::canvas_item_add_particles(RID p_item, RID p_particles, 
 	part->texture = p_texture;
 
 	//take the chance and request processing for them, at least once until they become visible again
-	RSG::storage->particles_request_process(p_particles);
+	RSG::particles_storage->particles_request_process(p_particles);
 }
 
 void RendererCanvasCull::canvas_item_add_multimesh(RID p_item, RID p_mesh, RID p_texture) {
@@ -1089,12 +1606,12 @@ void RendererCanvasCull::canvas_item_attach_skeleton(RID p_item, RID p_skeleton)
 			Item::CommandMesh *cm = static_cast<Item::CommandMesh *>(c);
 			if (canvas_item->skeleton.is_valid()) {
 				if (cm->mesh_instance.is_null()) {
-					cm->mesh_instance = RSG::storage->mesh_instance_create(cm->mesh);
+					cm->mesh_instance = RSG::mesh_storage->mesh_instance_create(cm->mesh);
 				}
-				RSG::storage->mesh_instance_set_skeleton(cm->mesh_instance, canvas_item->skeleton);
+				RSG::mesh_storage->mesh_instance_set_skeleton(cm->mesh_instance, canvas_item->skeleton);
 			} else {
 				if (cm->mesh_instance.is_valid()) {
-					RSG::storage->free(cm->mesh_instance);
+					RSG::mesh_storage->mesh_instance_free(cm->mesh_instance);
 					cm->mesh_instance = RID();
 				}
 			}
@@ -1437,7 +1954,7 @@ void RendererCanvasCull::canvas_light_occluder_set_polygon(RID p_occluder, RID p
 	ERR_FAIL_COND(!occluder);
 
 	if (occluder->polygon.is_valid()) {
-		LightOccluderPolygon *occluder_poly = canvas_light_occluder_polygon_owner.get_or_null(p_polygon);
+		LightOccluderPolygon *occluder_poly = canvas_light_occluder_polygon_owner.get_or_null(occluder->polygon);
 		if (occluder_poly) {
 			occluder_poly->owners.erase(occluder);
 		}
@@ -1507,8 +2024,8 @@ void RendererCanvasCull::canvas_occluder_polygon_set_shape(RID p_occluder_polygo
 
 	RSG::canvas_render->occluder_polygon_set_shape(occluder_poly->occluder, p_shape, p_closed);
 
-	for (Set<RendererCanvasRender::LightOccluderInstance *>::Element *E = occluder_poly->owners.front(); E; E = E->next()) {
-		E->get()->aabb_cache = occluder_poly->aabb;
+	for (RendererCanvasRender::LightOccluderInstance *E : occluder_poly->owners) {
+		E->aabb_cache = occluder_poly->aabb;
 	}
 }
 
@@ -1517,8 +2034,8 @@ void RendererCanvasCull::canvas_occluder_polygon_set_cull_mode(RID p_occluder_po
 	ERR_FAIL_COND(!occluder_poly);
 	occluder_poly->cull_mode = p_mode;
 	RSG::canvas_render->occluder_polygon_set_cull_mode(occluder_poly->occluder, p_mode);
-	for (Set<RendererCanvasRender::LightOccluderInstance *>::Element *E = occluder_poly->owners.front(); E; E = E->next()) {
-		E->get()->cull_cache = p_mode;
+	for (RendererCanvasRender::LightOccluderInstance *E : occluder_poly->owners) {
+		E->cull_cache = p_mode;
 	}
 }
 
@@ -1527,26 +2044,26 @@ void RendererCanvasCull::canvas_set_shadow_texture_size(int p_size) {
 }
 
 RID RendererCanvasCull::canvas_texture_allocate() {
-	return RSG::storage->canvas_texture_allocate();
+	return RSG::texture_storage->canvas_texture_allocate();
 }
 void RendererCanvasCull::canvas_texture_initialize(RID p_rid) {
-	RSG::storage->canvas_texture_initialize(p_rid);
+	RSG::texture_storage->canvas_texture_initialize(p_rid);
 }
 
 void RendererCanvasCull::canvas_texture_set_channel(RID p_canvas_texture, RS::CanvasTextureChannel p_channel, RID p_texture) {
-	RSG::storage->canvas_texture_set_channel(p_canvas_texture, p_channel, p_texture);
+	RSG::texture_storage->canvas_texture_set_channel(p_canvas_texture, p_channel, p_texture);
 }
 
 void RendererCanvasCull::canvas_texture_set_shading_parameters(RID p_canvas_texture, const Color &p_base_color, float p_shininess) {
-	RSG::storage->canvas_texture_set_shading_parameters(p_canvas_texture, p_base_color, p_shininess);
+	RSG::texture_storage->canvas_texture_set_shading_parameters(p_canvas_texture, p_base_color, p_shininess);
 }
 
 void RendererCanvasCull::canvas_texture_set_texture_filter(RID p_canvas_texture, RS::CanvasItemTextureFilter p_filter) {
-	RSG::storage->canvas_texture_set_texture_filter(p_canvas_texture, p_filter);
+	RSG::texture_storage->canvas_texture_set_texture_filter(p_canvas_texture, p_filter);
 }
 
 void RendererCanvasCull::canvas_texture_set_texture_repeat(RID p_canvas_texture, RS::CanvasItemTextureRepeat p_repeat) {
-	RSG::storage->canvas_texture_set_texture_repeat(p_canvas_texture, p_repeat);
+	RSG::texture_storage->canvas_texture_set_texture_repeat(p_canvas_texture, p_repeat);
 }
 
 void RendererCanvasCull::canvas_item_set_default_texture_filter(RID p_item, RS::CanvasItemTextureFilter p_filter) {
@@ -1571,11 +2088,11 @@ void RendererCanvasCull::update_visibility_notifiers() {
 
 			if (!visibility_notifier->enter_callable.is_null()) {
 				if (RSG::threaded) {
-					visibility_notifier->enter_callable.call_deferred(nullptr, 0);
+					visibility_notifier->enter_callable.call_deferred();
 				} else {
 					Callable::CallError ce;
 					Variant ret;
-					visibility_notifier->enter_callable.call(nullptr, 0, ret, ce);
+					visibility_notifier->enter_callable.callp(nullptr, 0, ret, ce);
 				}
 			}
 		} else {
@@ -1584,11 +2101,11 @@ void RendererCanvasCull::update_visibility_notifiers() {
 
 				if (!visibility_notifier->exit_callable.is_null()) {
 					if (RSG::threaded) {
-						visibility_notifier->exit_callable.call_deferred(nullptr, 0);
+						visibility_notifier->exit_callable.call_deferred();
 					} else {
 						Callable::CallError ce;
 						Variant ret;
-						visibility_notifier->exit_callable.call(nullptr, 0, ret, ce);
+						visibility_notifier->exit_callable.callp(nullptr, 0, ret, ce);
 					}
 				}
 			}
@@ -1604,26 +2121,26 @@ bool RendererCanvasCull::free(RID p_rid) {
 		ERR_FAIL_COND_V(!canvas, false);
 
 		while (canvas->viewports.size()) {
-			RendererViewport::Viewport *vp = RSG::viewport->viewport_owner.get_or_null(canvas->viewports.front()->get());
+			RendererViewport::Viewport *vp = RSG::viewport->viewport_owner.get_or_null(*canvas->viewports.begin());
 			ERR_FAIL_COND_V(!vp, true);
 
-			Map<RID, RendererViewport::Viewport::CanvasData>::Element *E = vp->canvas_map.find(p_rid);
+			HashMap<RID, RendererViewport::Viewport::CanvasData>::Iterator E = vp->canvas_map.find(p_rid);
 			ERR_FAIL_COND_V(!E, true);
 			vp->canvas_map.erase(p_rid);
 
-			canvas->viewports.erase(canvas->viewports.front());
+			canvas->viewports.erase(*canvas->viewports.begin());
 		}
 
 		for (int i = 0; i < canvas->child_items.size(); i++) {
 			canvas->child_items[i].item->parent = RID();
 		}
 
-		for (Set<RendererCanvasRender::Light *>::Element *E = canvas->lights.front(); E; E = E->next()) {
-			E->get()->canvas = RID();
+		for (RendererCanvasRender::Light *E : canvas->lights) {
+			E->canvas = RID();
 		}
 
-		for (Set<RendererCanvasRender::LightOccluderInstance *>::Element *E = canvas->occluders.front(); E; E = E->next()) {
-			E->get()->canvas = RID();
+		for (RendererCanvasRender::LightOccluderInstance *E : canvas->occluders) {
+			E->canvas = RID();
 		}
 
 		canvas_owner.free(p_rid);
@@ -1659,6 +2176,11 @@ bool RendererCanvasCull::free(RID p_rid) {
 			canvas_item->material->owners.erase(canvas_item);
 		}
 		*/
+
+		if (canvas_item->canvas_group != nullptr) {
+			memdelete(canvas_item->canvas_group);
+			canvas_item->canvas_group = nullptr;
+		}
 
 		canvas_item_owner.free(p_rid);
 
@@ -1701,8 +2223,8 @@ bool RendererCanvasCull::free(RID p_rid) {
 		RSG::canvas_render->free(occluder_poly->occluder);
 
 		while (occluder_poly->owners.size()) {
-			occluder_poly->owners.front()->get()->polygon = RID();
-			occluder_poly->owners.erase(occluder_poly->owners.front());
+			(*occluder_poly->owners.begin())->polygon = RID();
+			occluder_poly->owners.remove(occluder_poly->owners.begin());
 		}
 
 		canvas_light_occluder_polygon_owner.free(p_rid);

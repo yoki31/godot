@@ -1,47 +1,52 @@
-/*************************************************************************/
-/*  import_dock.cpp                                                      */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  import_dock.cpp                                                       */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #include "import_dock.h"
-#include "editor_node.h"
-#include "editor_resource_preview.h"
+
+#include "core/config/project_settings.h"
+#include "editor/editor_node.h"
+#include "editor/editor_resource_preview.h"
+#include "editor/editor_scale.h"
+#include "editor/editor_settings.h"
 
 class ImportDockParameters : public Object {
 	GDCLASS(ImportDockParameters, Object);
 
 public:
-	Map<StringName, Variant> values;
+	HashMap<StringName, Variant> values;
 	List<PropertyInfo> properties;
 	Ref<ResourceImporter> importer;
 	Vector<String> paths;
-	Set<StringName> checked;
+	HashSet<StringName> checked;
 	bool checking;
+	String base_options_path;
 
 	bool _set(const StringName &p_name, const Variant &p_value) {
 		if (values.has(p_name)) {
@@ -66,7 +71,7 @@ public:
 	}
 	void _get_property_list(List<PropertyInfo> *p_list) const {
 		for (const PropertyInfo &E : properties) {
-			if (!importer->get_option_visibility(E.name, values)) {
+			if (!importer->get_option_visibility(base_options_path, E.name, values)) {
 				continue;
 			}
 			PropertyInfo pi = E;
@@ -89,6 +94,8 @@ public:
 	}
 };
 
+ImportDock *ImportDock::singleton = nullptr;
+
 void ImportDock::set_edit_path(const String &p_path) {
 	Ref<ConfigFile> config;
 	config.instantiate();
@@ -104,8 +111,9 @@ void ImportDock::set_edit_path(const String &p_path) {
 
 	params->paths.clear();
 	params->paths.push_back(p_path);
+	params->base_options_path = p_path;
 
-	_update_options(config);
+	_update_options(p_path, config);
 
 	List<Ref<ResourceImporter>> importers;
 	ResourceFormatImporter::get_singleton()->get_importers_for_extension(p_path.get_extension(), &importers);
@@ -121,7 +129,7 @@ void ImportDock::set_edit_path(const String &p_path) {
 
 	for (const Pair<String, String> &E : importer_names) {
 		import_as->add_item(E.first);
-		import_as->set_item_metadata(import_as->get_item_count() - 1, E.second);
+		import_as->set_item_metadata(-1, E.second);
 		if (E.second == importer_name) {
 			import_as->select(import_as->get_item_count() - 1);
 		}
@@ -133,6 +141,8 @@ void ImportDock::set_edit_path(const String &p_path) {
 	_set_dirty(false);
 	import_as->set_disabled(false);
 	preset->set_disabled(false);
+	content->show();
+	select_a_resource->hide();
 
 	imported->set_text(p_path.get_file());
 }
@@ -140,23 +150,24 @@ void ImportDock::set_edit_path(const String &p_path) {
 void ImportDock::_add_keep_import_option(const String &p_importer_name) {
 	import_as->add_separator();
 	import_as->add_item(TTR("Keep File (No Import)"));
-	import_as->set_item_metadata(import_as->get_item_count() - 1, "keep");
+	import_as->set_item_metadata(-1, "keep");
 	if (p_importer_name == "keep") {
 		import_as->select(import_as->get_item_count() - 1);
 	}
 }
 
-void ImportDock::_update_options(const Ref<ConfigFile> &p_config) {
+void ImportDock::_update_options(const String &p_path, const Ref<ConfigFile> &p_config) {
 	List<ResourceImporter::ImportOption> options;
 
 	if (params->importer.is_valid()) {
-		params->importer->get_import_options(&options);
+		params->importer->get_import_options(p_path, &options);
 	}
 
 	params->properties.clear();
 	params->values.clear();
 	params->checking = params->paths.size() > 1;
 	params->checked.clear();
+	params->base_options_path = p_path;
 
 	for (const ResourceImporter::ImportOption &E : options) {
 		params->properties.push_back(E.option);
@@ -183,11 +194,13 @@ void ImportDock::set_edit_multiple_paths(const Vector<String> &p_paths) {
 	clear();
 
 	// Use the value that is repeated the most.
-	Map<String, Dictionary> value_frequency;
+	HashMap<String, Dictionary> value_frequency;
+	HashSet<String> extensions;
 
 	for (int i = 0; i < p_paths.size(); i++) {
 		Ref<ConfigFile> config;
 		config.instantiate();
+		extensions.insert(p_paths[i].get_extension());
 		Error err = config->load(p_paths[i] + ".import");
 		ERR_CONTINUE(err != OK);
 
@@ -223,13 +236,18 @@ void ImportDock::set_edit_multiple_paths(const Vector<String> &p_paths) {
 
 	ERR_FAIL_COND(params->importer.is_null());
 
+	String base_path;
+	if (extensions.size() == 1 && p_paths.size() > 0) {
+		base_path = p_paths[0];
+	}
 	List<ResourceImporter::ImportOption> options;
-	params->importer->get_import_options(&options);
+	params->importer->get_import_options(base_path, &options);
 
 	params->properties.clear();
 	params->values.clear();
 	params->checking = true;
 	params->checked.clear();
+	params->base_options_path = base_path;
 
 	for (const ResourceImporter::ImportOption &E : options) {
 		params->properties.push_back(E.option);
@@ -269,7 +287,7 @@ void ImportDock::set_edit_multiple_paths(const Vector<String> &p_paths) {
 
 	for (const Pair<String, String> &E : importer_names) {
 		import_as->add_item(E.first);
-		import_as->set_item_metadata(import_as->get_item_count() - 1, E.second);
+		import_as->set_item_metadata(-1, E.second);
 		if (E.second == params->importer->get_importer_name()) {
 			import_as->select(import_as->get_item_count() - 1);
 		}
@@ -284,6 +302,8 @@ void ImportDock::set_edit_multiple_paths(const Vector<String> &p_paths) {
 	_set_dirty(false);
 	import_as->set_disabled(false);
 	preset->set_disabled(false);
+	content->show();
+	select_a_resource->hide();
 
 	imported->set_text(vformat(TTR("%d Files"), p_paths.size()));
 
@@ -327,22 +347,22 @@ void ImportDock::_importer_selected(int i_idx) {
 	String name = import_as->get_selected_metadata();
 	if (name == "keep") {
 		params->importer.unref();
-		_update_options(Ref<ConfigFile>());
+		_update_options(params->base_options_path, Ref<ConfigFile>());
 	} else {
 		Ref<ResourceImporter> importer = ResourceFormatImporter::get_singleton()->get_importer_by_name(name);
 		ERR_FAIL_COND(importer.is_null());
 
 		params->importer = importer;
-
 		Ref<ConfigFile> config;
 		if (params->paths.size()) {
+			String path = params->paths[0];
 			config.instantiate();
-			Error err = config->load(params->paths[0] + ".import");
+			Error err = config->load(path + ".import");
 			if (err != OK) {
 				config.unref();
 			}
 		}
-		_update_options(config);
+		_update_options(params->base_options_path, config);
 	}
 }
 
@@ -364,7 +384,7 @@ void ImportDock::_preset_selected(int p_idx) {
 		case ITEM_LOAD_DEFAULT: {
 			ERR_FAIL_COND(!ProjectSettings::get_singleton()->has_setting("importer_defaults/" + params->importer->get_importer_name()));
 
-			Dictionary d = ProjectSettings::get_singleton()->get("importer_defaults/" + params->importer->get_importer_name());
+			Dictionary d = GLOBAL_GET("importer_defaults/" + params->importer->get_importer_name());
 			List<Variant> v;
 			d.get_key_list(&v);
 
@@ -387,7 +407,7 @@ void ImportDock::_preset_selected(int p_idx) {
 		default: {
 			List<ResourceImporter::ImportOption> options;
 
-			params->importer->get_import_options(&options, p_idx);
+			params->importer->get_import_options(params->base_options_path, &options, p_idx);
 
 			if (params->checking) {
 				params->checked.clear();
@@ -413,6 +433,8 @@ void ImportDock::clear() {
 	params->properties.clear();
 	params->update();
 	preset->get_popup()->clear();
+	content->hide();
+	select_a_resource->show();
 }
 
 static bool _find_owners(EditorFileSystemDirectory *efsd, const String &p_path) {
@@ -428,7 +450,7 @@ static bool _find_owners(EditorFileSystemDirectory *efsd, const String &p_path) 
 
 	for (int i = 0; i < efsd->get_file_count(); i++) {
 		Vector<String> deps = efsd->get_file_deps(i);
-		if (deps.find(p_path) != -1) {
+		if (deps.has(p_path)) {
 			return true;
 		}
 	}
@@ -515,7 +537,7 @@ void ImportDock::_reimport() {
 			Ref<ResourceImporter> importer = ResourceFormatImporter::get_singleton()->get_importer_by_name(importer_name);
 			ERR_CONTINUE(!importer.is_valid());
 			String group_file_property = importer->get_option_group_file();
-			if (group_file_property != String()) {
+			if (!group_file_property.is_empty()) {
 				//can import from a group (as in, atlas)
 				ERR_CONTINUE(!params->values.has(group_file_property));
 				String group_file = params->values[group_file_property];
@@ -543,6 +565,7 @@ void ImportDock::_notification(int p_what) {
 	switch (p_what) {
 		case EditorSettings::NOTIFICATION_EDITOR_SETTINGS_CHANGED: {
 			imported->add_theme_style_override("normal", get_theme_stylebox(SNAME("normal"), SNAME("LineEdit")));
+			import_opts->set_property_name_style(EditorPropertyNameProcessor::get_settings_style());
 		} break;
 
 		case NOTIFICATION_ENTER_TREE: {
@@ -561,12 +584,12 @@ void ImportDock::_set_dirty(bool p_dirty) {
 		// Add a dirty marker to notify the user that they should reimport the selected resource to see changes.
 		import->set_text(TTR("Reimport") + " (*)");
 		import->add_theme_color_override("font_color", get_theme_color(SNAME("warning_color"), SNAME("Editor")));
-		import->set_tooltip(TTR("You have pending changes that haven't been applied yet. Click Reimport to apply changes made to the import options.\nSelecting another resource in the FileSystem dock without clicking Reimport first will discard changes made in the Import dock."));
+		import->set_tooltip_text(TTR("You have pending changes that haven't been applied yet. Click Reimport to apply changes made to the import options.\nSelecting another resource in the FileSystem dock without clicking Reimport first will discard changes made in the Import dock."));
 	} else {
 		// Remove the dirty marker on the Reimport button.
 		import->set_text(TTR("Reimport"));
 		import->remove_theme_color_override("font_color");
-		import->set_tooltip("");
+		import->set_tooltip_text("");
 	}
 }
 
@@ -589,15 +612,25 @@ void ImportDock::initialize_import_options() const {
 }
 
 ImportDock::ImportDock() {
+	singleton = this;
 	set_name("Import");
+
+	content = memnew(VBoxContainer);
+	content->set_v_size_flags(SIZE_EXPAND_FILL);
+	add_child(content);
+	content->hide();
+
 	imported = memnew(Label);
 	imported->add_theme_style_override("normal", EditorNode::get_singleton()->get_gui_base()->get_theme_stylebox(SNAME("normal"), SNAME("LineEdit")));
 	imported->set_clip_text(true);
-	add_child(imported);
+	content->add_child(imported);
 	HBoxContainer *hb = memnew(HBoxContainer);
-	add_margin_child(TTR("Import As:"), hb);
+	content->add_margin_child(TTR("Import As:"), hb);
 	import_as = memnew(OptionButton);
 	import_as->set_disabled(true);
+	import_as->set_fit_to_longest_item(false);
+	import_as->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+	import_as->set_h_size_flags(SIZE_EXPAND_FILL);
 	import_as->connect("item_selected", callable_mp(this, &ImportDock::_importer_selected));
 	hb->add_child(import_as);
 	import_as->set_h_size_flags(SIZE_EXPAND_FILL);
@@ -608,13 +641,14 @@ ImportDock::ImportDock() {
 	hb->add_child(preset);
 
 	import_opts = memnew(EditorInspector);
-	add_child(import_opts);
+	content->add_child(import_opts);
 	import_opts->set_v_size_flags(SIZE_EXPAND_FILL);
+	import_opts->set_property_name_style(EditorPropertyNameProcessor::get_settings_style());
 	import_opts->connect("property_edited", callable_mp(this, &ImportDock::_property_edited));
 	import_opts->connect("property_toggled", callable_mp(this, &ImportDock::_property_toggled));
 
 	hb = memnew(HBoxContainer);
-	add_child(hb);
+	content->add_child(hb);
 	import = memnew(Button);
 	import->set_text(TTR("Reimport"));
 	import->set_disabled(true);
@@ -641,8 +675,8 @@ ImportDock::ImportDock() {
 	advanced->connect("pressed", callable_mp(this, &ImportDock::_advanced_options));
 
 	reimport_confirm = memnew(ConfirmationDialog);
-	reimport_confirm->get_ok_button()->set_text(TTR("Save Scenes, Re-Import, and Restart"));
-	add_child(reimport_confirm);
+	reimport_confirm->set_ok_button_text(TTR("Save Scenes, Re-Import, and Restart"));
+	content->add_child(reimport_confirm);
 	reimport_confirm->connect("confirmed", callable_mp(this, &ImportDock::_reimport_and_restart));
 
 	VBoxContainer *vbc_confirm = memnew(VBoxContainer());
@@ -652,8 +686,18 @@ ImportDock::ImportDock() {
 	reimport_confirm->add_child(vbc_confirm);
 
 	params = memnew(ImportDockParameters);
+
+	select_a_resource = memnew(Label);
+	select_a_resource->set_text(TTR("Select a resource file in the filesystem or in the inspector to adjust import settings."));
+	select_a_resource->set_autowrap_mode(TextServer::AUTOWRAP_WORD);
+	select_a_resource->set_custom_minimum_size(Size2(100 * EDSCALE, 0));
+	select_a_resource->set_v_size_flags(SIZE_EXPAND_FILL);
+	select_a_resource->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
+	select_a_resource->set_vertical_alignment(VERTICAL_ALIGNMENT_CENTER);
+	add_child(select_a_resource);
 }
 
 ImportDock::~ImportDock() {
+	singleton = nullptr;
 	memdelete(params);
 }

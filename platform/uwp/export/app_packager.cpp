@@ -1,34 +1,37 @@
-/*************************************************************************/
-/*  app_packager.cpp                                                     */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  app_packager.cpp                                                      */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #include "app_packager.h"
+
+#include "editor/editor_node.h"
+#include "editor/editor_paths.h"
 
 String AppxPackager::hash_block(const uint8_t *p_block_data, size_t p_block_len) {
 	unsigned char hash[32];
@@ -43,7 +46,7 @@ String AppxPackager::hash_block(const uint8_t *p_block_data, size_t p_block_len)
 }
 
 void AppxPackager::make_block_map(const String &p_path) {
-	FileAccess *tmp_file = FileAccess::open(p_path, FileAccess::WRITE);
+	Ref<FileAccess> tmp_file = FileAccess::open(p_path, FileAccess::WRITE);
 
 	tmp_file->store_string("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>");
 	tmp_file->store_string("<BlockMap xmlns=\"http://schemas.microsoft.com/appx/2010/blockmap\" HashMethod=\"http://www.w3.org/2001/04/xmlenc#sha256\">");
@@ -66,9 +69,6 @@ void AppxPackager::make_block_map(const String &p_path) {
 	}
 
 	tmp_file->store_string("</BlockMap>");
-
-	tmp_file->close();
-	memdelete(tmp_file);
 }
 
 String AppxPackager::content_type(String p_extension) {
@@ -86,12 +86,12 @@ String AppxPackager::content_type(String p_extension) {
 }
 
 void AppxPackager::make_content_types(const String &p_path) {
-	FileAccess *tmp_file = FileAccess::open(p_path, FileAccess::WRITE);
+	Ref<FileAccess> tmp_file = FileAccess::open(p_path, FileAccess::WRITE);
 
 	tmp_file->store_string("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
 	tmp_file->store_string("<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">");
 
-	Map<String, String> types;
+	HashMap<String, String> types;
 
 	for (int i = 0; i < file_metadata.size(); i++) {
 		String ext = file_metadata[i].name.get_extension().to_lower();
@@ -115,9 +115,6 @@ void AppxPackager::make_content_types(const String &p_path) {
 	tmp_file->store_string("<Override PartName=\"/AppxMetadata/CodeIntegrity.cat\" ContentType=\"application/vnd.ms-pkiseccat\" />");
 
 	tmp_file->store_string("</Types>");
-
-	tmp_file->close();
-	memdelete(tmp_file);
 }
 
 Vector<uint8_t> AppxPackager::make_file_header(FileMeta p_file_meta) {
@@ -282,7 +279,7 @@ Vector<uint8_t> AppxPackager::make_end_of_central_record() {
 	return buf;
 }
 
-void AppxPackager::init(FileAccess *p_fa) {
+void AppxPackager::init(Ref<FileAccess> p_fa) {
 	package = p_fa;
 	central_dir_offset = 0;
 	end_of_central_dir_offset = 0;
@@ -298,15 +295,13 @@ Error AppxPackager::add_file(String p_file_name, const uint8_t *p_buffer, size_t
 	FileMeta meta;
 	meta.name = p_file_name;
 	meta.uncompressed_size = p_len;
-	meta.compressed_size = p_len;
 	meta.compressed = p_compress;
 	meta.zip_offset = package->get_position();
 
 	Vector<uint8_t> file_buffer;
 
 	// Data for compression
-	z_stream strm;
-	FileAccess *strm_f = nullptr;
+	z_stream strm{};
 	Vector<uint8_t> strm_in;
 	strm_in.resize(BLOCK_SIZE);
 	Vector<uint8_t> strm_out;
@@ -314,7 +309,7 @@ Error AppxPackager::add_file(String p_file_name, const uint8_t *p_buffer, size_t
 	if (p_compress) {
 		strm.zalloc = zipio_alloc;
 		strm.zfree = zipio_free;
-		strm.opaque = &strm_f;
+		strm.opaque = Z_NULL;
 
 		strm_out.resize(BLOCK_SIZE + 8);
 
@@ -413,37 +408,35 @@ void AppxPackager::finish() {
 	// Create and add block map file
 	EditorNode::progress_task_step("export", "Creating block map...", 4);
 
-	const String &tmp_blockmap_file_path = EditorPaths::get_singleton()->get_cache_dir().plus_file("tmpblockmap.xml");
+	const String &tmp_blockmap_file_path = EditorPaths::get_singleton()->get_cache_dir().path_join("tmpblockmap.xml");
 	make_block_map(tmp_blockmap_file_path);
 
-	FileAccess *blockmap_file = FileAccess::open(tmp_blockmap_file_path, FileAccess::READ);
-	Vector<uint8_t> blockmap_buffer;
-	blockmap_buffer.resize(blockmap_file->get_length());
+	{
+		Ref<FileAccess> blockmap_file = FileAccess::open(tmp_blockmap_file_path, FileAccess::READ);
+		Vector<uint8_t> blockmap_buffer;
+		blockmap_buffer.resize(blockmap_file->get_length());
 
-	blockmap_file->get_buffer(blockmap_buffer.ptrw(), blockmap_buffer.size());
+		blockmap_file->get_buffer(blockmap_buffer.ptrw(), blockmap_buffer.size());
 
-	add_file("AppxBlockMap.xml", blockmap_buffer.ptr(), blockmap_buffer.size(), -1, -1, true);
-
-	blockmap_file->close();
-	memdelete(blockmap_file);
+		add_file("AppxBlockMap.xml", blockmap_buffer.ptr(), blockmap_buffer.size(), -1, -1, true);
+	}
 
 	// Add content types
 
 	EditorNode::progress_task_step("export", "Setting content types...", 5);
 
-	const String &tmp_content_types_file_path = EditorPaths::get_singleton()->get_cache_dir().plus_file("tmpcontenttypes.xml");
+	const String &tmp_content_types_file_path = EditorPaths::get_singleton()->get_cache_dir().path_join("tmpcontenttypes.xml");
 	make_content_types(tmp_content_types_file_path);
 
-	FileAccess *types_file = FileAccess::open(tmp_content_types_file_path, FileAccess::READ);
-	Vector<uint8_t> types_buffer;
-	types_buffer.resize(types_file->get_length());
+	{
+		Ref<FileAccess> types_file = FileAccess::open(tmp_content_types_file_path, FileAccess::READ);
+		Vector<uint8_t> types_buffer;
+		types_buffer.resize(types_file->get_length());
 
-	types_file->get_buffer(types_buffer.ptrw(), types_buffer.size());
+		types_file->get_buffer(types_buffer.ptrw(), types_buffer.size());
 
-	add_file("[Content_Types].xml", types_buffer.ptr(), types_buffer.size(), -1, -1, true);
-
-	types_file->close();
-	memdelete(types_file);
+		add_file("[Content_Types].xml", types_buffer.ptr(), types_buffer.size(), -1, -1, true);
+	}
 
 	// Cleanup generated files.
 	DirAccess::remove_file_or_error(tmp_blockmap_file_path);
@@ -464,9 +457,7 @@ void AppxPackager::finish() {
 	Vector<uint8_t> end_record = make_end_of_central_record();
 	package->store_buffer(end_record.ptr(), end_record.size());
 
-	package->close();
-	memdelete(package);
-	package = nullptr;
+	package.unref();
 }
 
 AppxPackager::AppxPackager() {}

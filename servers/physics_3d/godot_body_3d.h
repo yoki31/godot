@@ -1,32 +1,32 @@
-/*************************************************************************/
-/*  godot_body_3d.h                                                      */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  godot_body_3d.h                                                       */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #ifndef GODOT_BODY_3D_H
 #define GODOT_BODY_3D_H
@@ -40,10 +40,13 @@ class GodotConstraint3D;
 class GodotPhysicsDirectBodyState3D;
 
 class GodotBody3D : public GodotCollisionObject3D {
-	PhysicsServer3D::BodyMode mode = PhysicsServer3D::BODY_MODE_DYNAMIC;
+	PhysicsServer3D::BodyMode mode = PhysicsServer3D::BODY_MODE_RIGID;
 
 	Vector3 linear_velocity;
 	Vector3 angular_velocity;
+
+	Vector3 prev_linear_velocity;
+	Vector3 prev_angular_velocity;
 
 	Vector3 constant_linear_velocity;
 	Vector3 constant_angular_velocity;
@@ -55,8 +58,15 @@ class GodotBody3D : public GodotCollisionObject3D {
 	real_t friction = 1.0;
 	Vector3 inertia;
 
-	real_t linear_damp = -1.0;
-	real_t angular_damp = -1.0;
+	PhysicsServer3D::BodyDampMode linear_damp_mode = PhysicsServer3D::BODY_DAMP_MODE_COMBINE;
+	PhysicsServer3D::BodyDampMode angular_damp_mode = PhysicsServer3D::BODY_DAMP_MODE_COMBINE;
+
+	real_t linear_damp = 0.0;
+	real_t angular_damp = 0.0;
+
+	real_t total_linear_damp = 0.0;
+	real_t total_angular_damp = 0.0;
+
 	real_t gravity_scale = 1.0;
 
 	uint16_t locked_axis = 0;
@@ -83,8 +93,8 @@ class GodotBody3D : public GodotCollisionObject3D {
 	Vector3 applied_force;
 	Vector3 applied_torque;
 
-	real_t area_angular_damp = 0.0;
-	real_t area_linear_damp = 0.0;
+	Vector3 constant_force;
+	Vector3 constant_torque;
 
 	SelfList<GodotBody3D> active_list;
 	SelfList<GodotBody3D> mass_properties_update_list;
@@ -99,10 +109,10 @@ class GodotBody3D : public GodotCollisionObject3D {
 	bool first_time_kinematic = false;
 
 	void _mass_properties_changed();
-	virtual void _shapes_changed();
+	virtual void _shapes_changed() override;
 	Transform3D new_transform;
 
-	Map<GodotConstraint3D *, int> constraint_map;
+	HashMap<GodotConstraint3D *, int> constraint_map;
 
 	Vector<AreaCMP> areas;
 
@@ -116,13 +126,13 @@ class GodotBody3D : public GodotCollisionObject3D {
 		ObjectID collider_instance_id;
 		RID collider;
 		Vector3 collider_velocity_at_pos;
+		Vector3 impulse;
 	};
 
 	Vector<Contact> contacts; //no contacts by default
 	int contact_count = 0;
 
-	void *body_state_callback_instance = nullptr;
-	PhysicsServer3D::BodyStateCallback body_state_callback = nullptr;
+	Callable body_state_callback;
 
 	struct ForceIntegrationCallbackData {
 		Callable callable;
@@ -135,14 +145,12 @@ class GodotBody3D : public GodotCollisionObject3D {
 
 	uint64_t island_step = 0;
 
-	void _compute_area_gravity_and_damping(const GodotArea3D *p_area);
-
 	void _update_transform_dependent();
 
 	friend class GodotPhysicsDirectBodyState3D; // i give up, too many functions to expose
 
 public:
-	void set_state_sync_callback(void *p_instance, PhysicsServer3D::BodyStateCallback p_callback);
+	void set_state_sync_callback(const Callable &p_callable);
 	void set_force_integration_callback(const Callable &p_callable, const Variant &p_udata = Variant());
 
 	GodotPhysicsDirectBodyState3D *get_direct_state();
@@ -161,7 +169,7 @@ public:
 		if (index > -1) {
 			areas.write[index].refCount -= 1;
 			if (areas[index].refCount < 1) {
-				areas.remove(index);
+				areas.remove_at(index);
 			}
 		}
 	}
@@ -176,7 +184,7 @@ public:
 	_FORCE_INLINE_ int get_max_contacts_reported() const { return contacts.size(); }
 
 	_FORCE_INLINE_ bool can_report_contacts() const { return !contacts.is_empty(); }
-	_FORCE_INLINE_ void add_contact(const Vector3 &p_local_pos, const Vector3 &p_local_normal, real_t p_depth, int p_local_shape, const Vector3 &p_collider_pos, int p_collider_shape, ObjectID p_collider_instance_id, const RID &p_collider, const Vector3 &p_collider_velocity_at_pos);
+	_FORCE_INLINE_ void add_contact(const Vector3 &p_local_pos, const Vector3 &p_local_normal, real_t p_depth, int p_local_shape, const Vector3 &p_collider_pos, int p_collider_shape, ObjectID p_collider_instance_id, const RID &p_collider, const Vector3 &p_collider_velocity_at_pos, const Vector3 &p_impulse);
 
 	_FORCE_INLINE_ void add_exception(const RID &p_exception) { exceptions.insert(p_exception); }
 	_FORCE_INLINE_ void remove_exception(const RID &p_exception) { exceptions.erase(p_exception); }
@@ -188,7 +196,7 @@ public:
 
 	_FORCE_INLINE_ void add_constraint(GodotConstraint3D *p_constraint, int p_pos) { constraint_map[p_constraint] = p_pos; }
 	_FORCE_INLINE_ void remove_constraint(GodotConstraint3D *p_constraint) { constraint_map.erase(p_constraint); }
-	const Map<GodotConstraint3D *, int> &get_constraint_map() const { return constraint_map; }
+	const HashMap<GodotConstraint3D *, int> &get_constraint_map() const { return constraint_map; }
 	_FORCE_INLINE_ void clear_constraint_map() { constraint_map.clear(); }
 
 	_FORCE_INLINE_ void set_omit_force_integration(bool p_omit_force_integration) { omit_force_integration = p_omit_force_integration; }
@@ -196,6 +204,7 @@ public:
 
 	_FORCE_INLINE_ Basis get_principal_inertia_axes() const { return principal_inertia_axes; }
 	_FORCE_INLINE_ Vector3 get_center_of_mass() const { return center_of_mass; }
+	_FORCE_INLINE_ Vector3 get_center_of_mass_local() const { return center_of_mass_local; }
 	_FORCE_INLINE_ Vector3 xform_local_to_principal(const Vector3 &p_pos) const { return principal_inertia_axes_local.xform(p_pos - center_of_mass_local); }
 
 	_FORCE_INLINE_ void set_linear_velocity(const Vector3 &p_velocity) { linear_velocity = p_velocity; }
@@ -203,6 +212,9 @@ public:
 
 	_FORCE_INLINE_ void set_angular_velocity(const Vector3 &p_velocity) { angular_velocity = p_velocity; }
 	_FORCE_INLINE_ Vector3 get_angular_velocity() const { return angular_velocity; }
+
+	_FORCE_INLINE_ Vector3 get_prev_linear_velocity() const { return prev_linear_velocity; }
+	_FORCE_INLINE_ Vector3 get_prev_angular_velocity() const { return prev_angular_velocity; }
 
 	_FORCE_INLINE_ const Vector3 &get_biased_linear_velocity() const { return biased_linear_velocity; }
 	_FORCE_INLINE_ const Vector3 &get_biased_angular_velocity() const { return biased_angular_velocity; }
@@ -235,18 +247,37 @@ public:
 		biased_angular_velocity += _inv_inertia_tensor.xform(p_impulse);
 	}
 
-	_FORCE_INLINE_ void add_central_force(const Vector3 &p_force) {
+	_FORCE_INLINE_ void apply_central_force(const Vector3 &p_force) {
 		applied_force += p_force;
 	}
 
-	_FORCE_INLINE_ void add_force(const Vector3 &p_force, const Vector3 &p_position = Vector3()) {
+	_FORCE_INLINE_ void apply_force(const Vector3 &p_force, const Vector3 &p_position = Vector3()) {
 		applied_force += p_force;
 		applied_torque += (p_position - center_of_mass).cross(p_force);
 	}
 
-	_FORCE_INLINE_ void add_torque(const Vector3 &p_torque) {
+	_FORCE_INLINE_ void apply_torque(const Vector3 &p_torque) {
 		applied_torque += p_torque;
 	}
+
+	_FORCE_INLINE_ void add_constant_central_force(const Vector3 &p_force) {
+		constant_force += p_force;
+	}
+
+	_FORCE_INLINE_ void add_constant_force(const Vector3 &p_force, const Vector3 &p_position = Vector3()) {
+		constant_force += p_force;
+		constant_torque += (p_position - center_of_mass).cross(p_force);
+	}
+
+	_FORCE_INLINE_ void add_constant_torque(const Vector3 &p_torque) {
+		constant_torque += p_torque;
+	}
+
+	void set_constant_force(const Vector3 &p_force) { constant_force = p_force; }
+	Vector3 get_constant_force() const { return constant_force; }
+
+	void set_constant_torque(const Vector3 &p_torque) { constant_torque = p_torque; }
+	Vector3 get_constant_torque() const { return constant_torque; }
 
 	void set_active(bool p_active);
 	_FORCE_INLINE_ bool is_active() const { return active; }
@@ -267,16 +298,10 @@ public:
 	void set_state(PhysicsServer3D::BodyState p_state, const Variant &p_variant);
 	Variant get_state(PhysicsServer3D::BodyState p_state) const;
 
-	void set_applied_force(const Vector3 &p_force) { applied_force = p_force; }
-	Vector3 get_applied_force() const { return applied_force; }
-
-	void set_applied_torque(const Vector3 &p_torque) { applied_torque = p_torque; }
-	Vector3 get_applied_torque() const { return applied_torque; }
-
 	_FORCE_INLINE_ void set_continuous_collision_detection(bool p_enable) { continuous_cd = p_enable; }
 	_FORCE_INLINE_ bool is_continuous_collision_detection_enabled() const { return continuous_cd; }
 
-	void set_space(GodotSpace3D *p_space);
+	void set_space(GodotSpace3D *p_space) override;
 
 	void update_mass_properties();
 	void reset_mass_properties();
@@ -285,7 +310,6 @@ public:
 	_FORCE_INLINE_ const Vector3 &get_inv_inertia() const { return _inv_inertia; }
 	_FORCE_INLINE_ const Basis &get_inv_inertia_tensor() const { return _inv_inertia_tensor; }
 	_FORCE_INLINE_ real_t get_friction() const { return friction; }
-	_FORCE_INLINE_ const Vector3 &get_gravity() const { return gravity; }
 	_FORCE_INLINE_ real_t get_bounce() const { return bounce; }
 
 	void set_axis_lock(PhysicsServer3D::BodyAxis p_axis, bool lock);
@@ -324,7 +348,7 @@ public:
 
 //add contact inline
 
-void GodotBody3D::add_contact(const Vector3 &p_local_pos, const Vector3 &p_local_normal, real_t p_depth, int p_local_shape, const Vector3 &p_collider_pos, int p_collider_shape, ObjectID p_collider_instance_id, const RID &p_collider, const Vector3 &p_collider_velocity_at_pos) {
+void GodotBody3D::add_contact(const Vector3 &p_local_pos, const Vector3 &p_local_normal, real_t p_depth, int p_local_shape, const Vector3 &p_collider_pos, int p_collider_shape, ObjectID p_collider_instance_id, const RID &p_collider, const Vector3 &p_collider_velocity_at_pos, const Vector3 &p_impulse) {
 	int c_max = contacts.size();
 
 	if (c_max == 0) {
@@ -364,6 +388,7 @@ void GodotBody3D::add_contact(const Vector3 &p_local_pos, const Vector3 &p_local
 	c[idx].collider_instance_id = p_collider_instance_id;
 	c[idx].collider = p_collider;
 	c[idx].collider_velocity_at_pos = p_collider_velocity_at_pos;
+	c[idx].impulse = p_impulse;
 }
 
 #endif // GODOT_BODY_3D_H

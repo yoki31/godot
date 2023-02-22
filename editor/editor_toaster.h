@@ -1,42 +1,42 @@
-/*************************************************************************/
-/*  editor_toaster.h                                                     */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  editor_toaster.h                                                      */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #ifndef EDITOR_TOASTER_H
 #define EDITOR_TOASTER_H
 
-#include "scene/gui/box_container.h"
-#include "scene/gui/button.h"
-#include "scene/gui/popup.h"
-
 #include "core/string/ustring.h"
 #include "core/templates/local_vector.h"
+#include "scene/gui/box_container.h"
+
+class Button;
+class PanelContainer;
 
 class EditorToaster : public HBoxContainer {
 	GDCLASS(EditorToaster, HBoxContainer);
@@ -61,11 +61,11 @@ private:
 	Ref<StyleBoxFlat> warning_panel_style_progress;
 	Ref<StyleBoxFlat> error_panel_style_progress;
 
-	Button *main_button;
-	PanelContainer *disable_notifications_panel;
-	Button *disable_notifications_button;
+	Button *main_button = nullptr;
+	PanelContainer *disable_notifications_panel = nullptr;
+	Button *disable_notifications_button = nullptr;
 
-	VBoxContainer *vbox_container;
+	VBoxContainer *vbox_container = nullptr;
 	const int max_temporary_count = 5;
 	struct Toast {
 		Severity severity = SEVERITY_INFO;
@@ -79,8 +79,12 @@ private:
 		String message;
 		String tooltip;
 		int count = 0;
+		Label *message_label = nullptr;
+		Label *message_count_label = nullptr;
 	};
-	Map<Control *, Toast> toasts;
+	HashMap<Control *, Toast> toasts;
+
+	bool is_processing_error = false; // Makes sure that we don't handle errors that are triggered within the EditorToaster error processing.
 
 	const double default_message_duration = 5.0;
 
@@ -94,9 +98,12 @@ private:
 
 	void _set_notifications_enabled(bool p_enabled);
 	void _repop_old();
+	void _popup_str(String p_message, Severity p_severity, String p_tooltip);
+	void _close_button_theme_changed(Control *p_close_button);
 
 protected:
 	static EditorToaster *singleton;
+	static void _bind_methods();
 
 	void _notification(int p_what);
 

@@ -1,32 +1,32 @@
-/*************************************************************************/
-/*  local_vector.h                                                       */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  local_vector.h                                                        */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #ifndef LOCAL_VECTOR_H
 #define LOCAL_VECTOR_H
@@ -36,7 +36,12 @@
 #include "core/templates/sort_array.h"
 #include "core/templates/vector.h"
 
-template <class T, class U = uint32_t, bool force_trivial = false>
+#include <initializer_list>
+#include <type_traits>
+
+// If tight, it grows strictly as much as needed.
+// Otherwise, it grows exponentially (the default and what you want in most cases).
+template <class T, class U = uint32_t, bool force_trivial = false, bool tight = false>
 class LocalVector {
 private:
 	U count = 0;
@@ -63,33 +68,33 @@ public:
 			CRASH_COND_MSG(!data, "Out of memory");
 		}
 
-		if (!__has_trivial_constructor(T) && !force_trivial) {
+		if constexpr (!std::is_trivially_constructible<T>::value && !force_trivial) {
 			memnew_placement(&data[count++], T(p_elem));
 		} else {
 			data[count++] = p_elem;
 		}
 	}
 
-	void remove(U p_index) {
+	void remove_at(U p_index) {
 		ERR_FAIL_UNSIGNED_INDEX(p_index, count);
 		count--;
 		for (U i = p_index; i < count; i++) {
 			data[i] = data[i + 1];
 		}
-		if (!__has_trivial_destructor(T) && !force_trivial) {
+		if constexpr (!std::is_trivially_destructible<T>::value && !force_trivial) {
 			data[count].~T();
 		}
 	}
 
 	/// Removes the item copying the last value into the position of the one to
 	/// remove. It's generally faster than `remove`.
-	void remove_unordered(U p_index) {
+	void remove_at_unordered(U p_index) {
 		ERR_FAIL_INDEX(p_index, count);
 		count--;
 		if (count > p_index) {
 			data[p_index] = data[count];
 		}
-		if (!__has_trivial_destructor(T) && !force_trivial) {
+		if constexpr (!std::is_trivially_destructible<T>::value && !force_trivial) {
 			data[count].~T();
 		}
 	}
@@ -97,7 +102,7 @@ public:
 	void erase(const T &p_val) {
 		int64_t idx = find(p_val);
 		if (idx >= 0) {
-			remove(idx);
+			remove_at(idx);
 		}
 	}
 
@@ -119,7 +124,7 @@ public:
 	_FORCE_INLINE_ bool is_empty() const { return count == 0; }
 	_FORCE_INLINE_ U get_capacity() const { return capacity; }
 	_FORCE_INLINE_ void reserve(U p_size) {
-		p_size = nearest_power_of_2_templated(p_size);
+		p_size = tight ? p_size : nearest_power_of_2_templated(p_size);
 		if (p_size > capacity) {
 			capacity = p_size;
 			data = (T *)memrealloc(data, capacity * sizeof(T));
@@ -130,7 +135,7 @@ public:
 	_FORCE_INLINE_ U size() const { return count; }
 	void resize(U p_size) {
 		if (p_size < count) {
-			if (!__has_trivial_destructor(T) && !force_trivial) {
+			if constexpr (!std::is_trivially_destructible<T>::value && !force_trivial) {
 				for (U i = p_size; i < count; i++) {
 					data[i].~T();
 				}
@@ -147,7 +152,7 @@ public:
 				data = (T *)memrealloc(data, capacity * sizeof(T));
 				CRASH_COND_MSG(!data, "Out of memory");
 			}
-			if (!__has_trivial_constructor(T) && !force_trivial) {
+			if constexpr (!std::is_trivially_constructible<T>::value && !force_trivial) {
 				for (U i = count; i < p_size; i++) {
 					memnew_placement(&data[i], T);
 				}
@@ -162,6 +167,70 @@ public:
 	_FORCE_INLINE_ T &operator[](U p_index) {
 		CRASH_BAD_UNSIGNED_INDEX(p_index, count);
 		return data[p_index];
+	}
+
+	struct Iterator {
+		_FORCE_INLINE_ T &operator*() const {
+			return *elem_ptr;
+		}
+		_FORCE_INLINE_ T *operator->() const { return elem_ptr; }
+		_FORCE_INLINE_ Iterator &operator++() {
+			elem_ptr++;
+			return *this;
+		}
+		_FORCE_INLINE_ Iterator &operator--() {
+			elem_ptr--;
+			return *this;
+		}
+
+		_FORCE_INLINE_ bool operator==(const Iterator &b) const { return elem_ptr == b.elem_ptr; }
+		_FORCE_INLINE_ bool operator!=(const Iterator &b) const { return elem_ptr != b.elem_ptr; }
+
+		Iterator(T *p_ptr) { elem_ptr = p_ptr; }
+		Iterator() {}
+		Iterator(const Iterator &p_it) { elem_ptr = p_it.elem_ptr; }
+
+	private:
+		T *elem_ptr = nullptr;
+	};
+
+	struct ConstIterator {
+		_FORCE_INLINE_ const T &operator*() const {
+			return *elem_ptr;
+		}
+		_FORCE_INLINE_ const T *operator->() const { return elem_ptr; }
+		_FORCE_INLINE_ ConstIterator &operator++() {
+			elem_ptr++;
+			return *this;
+		}
+		_FORCE_INLINE_ ConstIterator &operator--() {
+			elem_ptr--;
+			return *this;
+		}
+
+		_FORCE_INLINE_ bool operator==(const ConstIterator &b) const { return elem_ptr == b.elem_ptr; }
+		_FORCE_INLINE_ bool operator!=(const ConstIterator &b) const { return elem_ptr != b.elem_ptr; }
+
+		ConstIterator(const T *p_ptr) { elem_ptr = p_ptr; }
+		ConstIterator() {}
+		ConstIterator(const ConstIterator &p_it) { elem_ptr = p_it.elem_ptr; }
+
+	private:
+		const T *elem_ptr = nullptr;
+	};
+
+	_FORCE_INLINE_ Iterator begin() {
+		return Iterator(data);
+	}
+	_FORCE_INLINE_ Iterator end() {
+		return Iterator(data + size());
+	}
+
+	_FORCE_INLINE_ ConstIterator begin() const {
+		return ConstIterator(ptr());
+	}
+	_FORCE_INLINE_ ConstIterator end() const {
+		return ConstIterator(ptr() + size());
 	}
 
 	void insert(U p_pos, T p_val) {
@@ -228,25 +297,29 @@ public:
 	}
 
 	_FORCE_INLINE_ LocalVector() {}
+	_FORCE_INLINE_ LocalVector(std::initializer_list<T> p_init) {
+		reserve(p_init.size());
+		for (const T &element : p_init) {
+			push_back(element);
+		}
+	}
 	_FORCE_INLINE_ LocalVector(const LocalVector &p_from) {
 		resize(p_from.size());
 		for (U i = 0; i < p_from.count; i++) {
 			data[i] = p_from.data[i];
 		}
 	}
-	inline LocalVector &operator=(const LocalVector &p_from) {
+	inline void operator=(const LocalVector &p_from) {
 		resize(p_from.size());
 		for (U i = 0; i < p_from.count; i++) {
 			data[i] = p_from.data[i];
 		}
-		return *this;
 	}
-	inline LocalVector &operator=(const Vector<T> &p_from) {
+	inline void operator=(const Vector<T> &p_from) {
 		resize(p_from.size());
 		for (U i = 0; i < count; i++) {
 			data[i] = p_from[i];
 		}
-		return *this;
 	}
 
 	_FORCE_INLINE_ ~LocalVector() {
@@ -255,5 +328,8 @@ public:
 		}
 	}
 };
+
+template <class T, class U = uint32_t, bool force_trivial = false>
+using TightLocalVector = LocalVector<T, U, force_trivial, true>;
 
 #endif // LOCAL_VECTOR_H

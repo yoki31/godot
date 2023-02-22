@@ -1,32 +1,32 @@
-/*************************************************************************/
-/*  lightmapper_rd.h                                                     */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  lightmapper_rd.h                                                      */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #ifndef LIGHTMAPPER_RD_H
 #define LIGHTMAPPER_RD_H
@@ -57,8 +57,9 @@ class LightmapperRD : public Lightmapper {
 		float attenuation = 0.0;
 		float cos_spot_angle = 0.0;
 		float inv_spot_attenuation = 0.0;
+		float shadow_blur = 0.0;
 		uint32_t static_bake = 0;
-		uint32_t pad[3] = {};
+		uint32_t pad[2] = {};
 
 		bool operator<(const Light &p_light) const {
 			return type < p_light.type;
@@ -73,13 +74,13 @@ class LightmapperRD : public Lightmapper {
 
 		bool operator==(const Vertex &p_vtx) const {
 			return (position[0] == p_vtx.position[0]) &&
-				   (position[1] == p_vtx.position[1]) &&
-				   (position[2] == p_vtx.position[2]) &&
-				   (uv[0] == p_vtx.uv[0]) &&
-				   (uv[1] == p_vtx.uv[1]) &&
-				   (normal_xy[0] == p_vtx.normal_xy[0]) &&
-				   (normal_xy[1] == p_vtx.normal_xy[1]) &&
-				   (normal_z == p_vtx.normal_z);
+					(position[1] == p_vtx.position[1]) &&
+					(position[2] == p_vtx.position[2]) &&
+					(uv[0] == p_vtx.uv[0]) &&
+					(uv[1] == p_vtx.uv[1]) &&
+					(normal_xy[0] == p_vtx.normal_xy[0]) &&
+					(normal_xy[1] == p_vtx.normal_xy[1]) &&
+					(normal_z == p_vtx.normal_z);
 		}
 	};
 
@@ -110,12 +111,12 @@ class LightmapperRD : public Lightmapper {
 
 	struct EdgeHash {
 		_FORCE_INLINE_ static uint32_t hash(const Edge &p_edge) {
-			uint32_t h = hash_djb2_one_float(p_edge.a.x);
-			h = hash_djb2_one_float(p_edge.a.y, h);
-			h = hash_djb2_one_float(p_edge.a.z, h);
-			h = hash_djb2_one_float(p_edge.b.x, h);
-			h = hash_djb2_one_float(p_edge.b.y, h);
-			h = hash_djb2_one_float(p_edge.b.z, h);
+			uint32_t h = hash_murmur3_one_float(p_edge.a.x);
+			h = hash_murmur3_one_float(p_edge.a.y, h);
+			h = hash_murmur3_one_float(p_edge.a.z, h);
+			h = hash_murmur3_one_float(p_edge.b.x, h);
+			h = hash_murmur3_one_float(p_edge.b.y, h);
+			h = hash_murmur3_one_float(p_edge.b.z, h);
 			return h;
 		}
 	};
@@ -146,15 +147,15 @@ class LightmapperRD : public Lightmapper {
 
 	struct VertexHash {
 		_FORCE_INLINE_ static uint32_t hash(const Vertex &p_vtx) {
-			uint32_t h = hash_djb2_one_float(p_vtx.position[0]);
-			h = hash_djb2_one_float(p_vtx.position[1], h);
-			h = hash_djb2_one_float(p_vtx.position[2], h);
-			h = hash_djb2_one_float(p_vtx.uv[0], h);
-			h = hash_djb2_one_float(p_vtx.uv[1], h);
-			h = hash_djb2_one_float(p_vtx.normal_xy[0], h);
-			h = hash_djb2_one_float(p_vtx.normal_xy[1], h);
-			h = hash_djb2_one_float(p_vtx.normal_z, h);
-			return h;
+			uint32_t h = hash_murmur3_one_float(p_vtx.position[0]);
+			h = hash_murmur3_one_float(p_vtx.position[1], h);
+			h = hash_murmur3_one_float(p_vtx.position[2], h);
+			h = hash_murmur3_one_float(p_vtx.uv[0], h);
+			h = hash_murmur3_one_float(p_vtx.uv[1], h);
+			h = hash_murmur3_one_float(p_vtx.normal_xy[0], h);
+			h = hash_murmur3_one_float(p_vtx.normal_xy[1], h);
+			h = hash_murmur3_one_float(p_vtx.normal_z, h);
+			return hash_fmix32(h);
 		}
 	};
 
@@ -182,7 +183,7 @@ class LightmapperRD : public Lightmapper {
 		}
 	};
 
-	void _plot_triangle_into_triangle_index_list(int p_size, const Vector3i &p_ofs, const AABB &p_bounds, const Vector3 p_points[], uint32_t p_triangle_index, LocalVector<TriangleSort> &triangles, uint32_t p_grid_size);
+	void _plot_triangle_into_triangle_index_list(int p_size, const Vector3i &p_ofs, const AABB &p_bounds, const Vector3 p_points[3], uint32_t p_triangle_index, LocalVector<TriangleSort> &triangles, uint32_t p_grid_size);
 
 	struct RasterPushConstant {
 		float atlas_size[2] = {};
@@ -236,11 +237,11 @@ class LightmapperRD : public Lightmapper {
 
 public:
 	virtual void add_mesh(const MeshData &p_mesh) override;
-	virtual void add_directional_light(bool p_static, const Vector3 &p_direction, const Color &p_color, float p_energy, float p_angular_distance) override;
-	virtual void add_omni_light(bool p_static, const Vector3 &p_position, const Color &p_color, float p_energy, float p_range, float p_attenuation, float p_size) override;
-	virtual void add_spot_light(bool p_static, const Vector3 &p_position, const Vector3 p_direction, const Color &p_color, float p_energy, float p_range, float p_attenuation, float p_spot_angle, float p_spot_attenuation, float p_size) override;
+	virtual void add_directional_light(bool p_static, const Vector3 &p_direction, const Color &p_color, float p_energy, float p_angular_distance, float p_shadow_blur) override;
+	virtual void add_omni_light(bool p_static, const Vector3 &p_position, const Color &p_color, float p_energy, float p_range, float p_attenuation, float p_size, float p_shadow_blur) override;
+	virtual void add_spot_light(bool p_static, const Vector3 &p_position, const Vector3 p_direction, const Color &p_color, float p_energy, float p_range, float p_attenuation, float p_spot_angle, float p_spot_attenuation, float p_size, float p_shadow_blur) override;
 	virtual void add_probe(const Vector3 &p_position) override;
-	virtual BakeError bake(BakeQuality p_quality, bool p_use_denoiser, int p_bounces, float p_bias, int p_max_texture_size, bool p_bake_sh, GenerateProbes p_generate_probes, const Ref<Image> &p_environment_panorama, const Basis &p_environment_transform, BakeStepFunc p_step_function = nullptr, void *p_bake_userdata = nullptr) override;
+	virtual BakeError bake(BakeQuality p_quality, bool p_use_denoiser, int p_bounces, float p_bias, int p_max_texture_size, bool p_bake_sh, GenerateProbes p_generate_probes, const Ref<Image> &p_environment_panorama, const Basis &p_environment_transform, BakeStepFunc p_step_function = nullptr, void *p_bake_userdata = nullptr, float p_exposure_normalization = 1.0) override;
 
 	int get_bake_texture_count() const override;
 	Ref<Image> get_bake_texture(int p_index) const override;
@@ -255,4 +256,4 @@ public:
 	LightmapperRD();
 };
 
-#endif // LIGHTMAPPER_H
+#endif // LIGHTMAPPER_RD_H

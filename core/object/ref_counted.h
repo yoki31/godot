@@ -1,32 +1,32 @@
-/*************************************************************************/
-/*  ref_counted.h                                                        */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  ref_counted.h                                                         */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #ifndef REF_COUNTED_H
 #define REF_COUNTED_H
@@ -47,7 +47,7 @@ public:
 	bool init_ref();
 	bool reference(); // returns false if refcount is at zero and didn't get increased
 	bool unreference();
-	int reference_get_count() const;
+	int get_reference_count() const;
 
 	RefCounted();
 	~RefCounted() {}
@@ -234,8 +234,6 @@ public:
 	}
 };
 
-typedef Ref<RefCounted> REF;
-
 class WeakRef : public RefCounted {
 	GDCLASS(WeakRef, RefCounted);
 
@@ -247,7 +245,7 @@ protected:
 public:
 	Variant get_ref() const;
 	void set_obj(Object *p_object);
-	void set_ref(const REF &p_ref);
+	void set_ref(const Ref<RefCounted> &p_ref);
 
 	WeakRef() {}
 };
@@ -255,13 +253,15 @@ public:
 template <class T>
 struct PtrToArg<Ref<T>> {
 	_FORCE_INLINE_ static Ref<T> convert(const void *p_ptr) {
+		// p_ptr points to a RefCounted object
 		return Ref<T>(const_cast<T *>(reinterpret_cast<const T *>(p_ptr)));
 	}
 
 	typedef Ref<T> EncodeT;
 
 	_FORCE_INLINE_ static void encode(Ref<T> p_val, const void *p_ptr) {
-		*(Ref<RefCounted> *)p_ptr = p_val;
+		// p_ptr points to an EncodeT object which is a Ref<T> object.
+		*(const_cast<Ref<RefCounted> *>(reinterpret_cast<const Ref<RefCounted> *>(p_ptr))) = p_val;
 	}
 };
 
@@ -270,6 +270,7 @@ struct PtrToArg<const Ref<T> &> {
 	typedef Ref<T> EncodeT;
 
 	_FORCE_INLINE_ static Ref<T> convert(const void *p_ptr) {
+		// p_ptr points to a RefCounted object
 		return Ref<T>((T *)p_ptr);
 	}
 };

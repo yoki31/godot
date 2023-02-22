@@ -1,102 +1,111 @@
-/*************************************************************************/
-/*  audio_stream_player_2d.cpp                                           */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  audio_stream_player_2d.cpp                                            */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #include "audio_stream_player_2d.h"
 
+#include "core/config/project_settings.h"
 #include "scene/2d/area_2d.h"
 #include "scene/2d/audio_listener_2d.h"
 #include "scene/main/window.h"
+#include "scene/resources/world_2d.h"
 
 void AudioStreamPlayer2D::_notification(int p_what) {
-	if (p_what == NOTIFICATION_ENTER_TREE) {
-		AudioServer::get_singleton()->add_listener_changed_callback(_listener_changed_cb, this);
-		if (autoplay && !Engine::get_singleton()->is_editor_hint()) {
-			play();
-		}
-	}
+	switch (p_what) {
+		case NOTIFICATION_ENTER_TREE: {
+			AudioServer::get_singleton()->add_listener_changed_callback(_listener_changed_cb, this);
+			if (autoplay && !Engine::get_singleton()->is_editor_hint()) {
+				play();
+			}
+			set_stream_paused(false);
+		} break;
 
-	if (p_what == NOTIFICATION_EXIT_TREE) {
-		stop();
-		AudioServer::get_singleton()->remove_listener_changed_callback(_listener_changed_cb, this);
-	}
-
-	if (p_what == NOTIFICATION_PAUSED) {
-		if (!can_process()) {
-			// Node can't process so we start fading out to silence
+		case NOTIFICATION_EXIT_TREE: {
 			set_stream_paused(true);
-		}
-	}
+			AudioServer::get_singleton()->remove_listener_changed_callback(_listener_changed_cb, this);
+		} break;
 
-	if (p_what == NOTIFICATION_UNPAUSED) {
-		set_stream_paused(false);
-	}
+		case NOTIFICATION_PREDELETE: {
+			stop();
+		} break;
 
-	if (p_what == NOTIFICATION_INTERNAL_PHYSICS_PROCESS) {
-		//update anything related to position first, if possible of course
-		if (setplay.get() > 0 || (active.is_set() && last_mix_count != AudioServer::get_singleton()->get_mix_count())) {
-			_update_panning();
-		}
+		case NOTIFICATION_PAUSED: {
+			if (!can_process()) {
+				// Node can't process so we start fading out to silence.
+				set_stream_paused(true);
+			}
+		} break;
 
-		if (setplay.get() >= 0 && stream.is_valid()) {
-			active.set();
-			Ref<AudioStreamPlayback> new_playback = stream->instance_playback();
-			ERR_FAIL_COND_MSG(new_playback.is_null(), "Failed to instantiate playback.");
-			AudioServer::get_singleton()->start_playback_stream(new_playback, _get_actual_bus(), volume_vector, setplay.get(), pitch_scale);
-			stream_playbacks.push_back(new_playback);
-			setplay.set(-1);
-		}
+		case NOTIFICATION_UNPAUSED: {
+			set_stream_paused(false);
+		} break;
 
-		if (!stream_playbacks.is_empty() && active.is_set()) {
-			// Stop playing if no longer active.
-			Vector<Ref<AudioStreamPlayback>> playbacks_to_remove;
-			for (Ref<AudioStreamPlayback> &playback : stream_playbacks) {
-				if (playback.is_valid() && !AudioServer::get_singleton()->is_playback_active(playback) && !AudioServer::get_singleton()->is_playback_paused(playback)) {
+		case NOTIFICATION_INTERNAL_PHYSICS_PROCESS: {
+			// Update anything related to position first, if possible of course.
+			if (setplay.get() > 0 || (active.is_set() && last_mix_count != AudioServer::get_singleton()->get_mix_count())) {
+				_update_panning();
+			}
+
+			if (setplayback.is_valid() && setplay.get() >= 0) {
+				active.set();
+				AudioServer::get_singleton()->start_playback_stream(setplayback, _get_actual_bus(), volume_vector, setplay.get(), pitch_scale);
+				setplayback.unref();
+				setplay.set(-1);
+			}
+
+			if (!stream_playbacks.is_empty() && active.is_set()) {
+				// Stop playing if no longer active.
+				Vector<Ref<AudioStreamPlayback>> playbacks_to_remove;
+				for (Ref<AudioStreamPlayback> &playback : stream_playbacks) {
+					if (playback.is_valid() && !AudioServer::get_singleton()->is_playback_active(playback) && !AudioServer::get_singleton()->is_playback_paused(playback)) {
+						playbacks_to_remove.push_back(playback);
+					}
+				}
+				// Now go through and remove playbacks that have finished. Removing elements from a Vector in a range based for is asking for trouble.
+				for (Ref<AudioStreamPlayback> &playback : playbacks_to_remove) {
+					stream_playbacks.erase(playback);
+				}
+				if (!playbacks_to_remove.is_empty() && stream_playbacks.is_empty()) {
+					// This node is no longer actively playing audio.
+					active.clear();
+					set_physics_process_internal(false);
+				}
+				if (!playbacks_to_remove.is_empty()) {
 					emit_signal(SNAME("finished"));
-					playbacks_to_remove.push_back(playback);
 				}
 			}
-			// Now go through and remove playbacks that have finished. Removing elements from a Vector in a range based for is asking for trouble.
-			for (Ref<AudioStreamPlayback> &playback : playbacks_to_remove) {
-				stream_playbacks.erase(playback);
-			}
-			if (!playbacks_to_remove.is_empty() && stream_playbacks.is_empty()) {
-				// This node is no longer actively playing audio.
-				active.clear();
-				set_physics_process_internal(false);
-			}
-		}
 
-		while (stream_playbacks.size() > max_polyphony) {
-			AudioServer::get_singleton()->stop_playback_stream(stream_playbacks[0]);
-			stream_playbacks.remove(0);
-		}
+			while (stream_playbacks.size() > max_polyphony) {
+				AudioServer::get_singleton()->stop_playback_stream(stream_playbacks[0]);
+				stream_playbacks.remove_at(0);
+			}
+		} break;
 	}
 }
 
@@ -110,7 +119,13 @@ StringName AudioStreamPlayer2D::_get_actual_bus() {
 	PhysicsDirectSpaceState2D *space_state = PhysicsServer2D::get_singleton()->space_get_direct_state(world_2d->get_space());
 	PhysicsDirectSpaceState2D::ShapeResult sr[MAX_INTERSECT_AREAS];
 
-	int areas = space_state->intersect_point(global_pos, sr, MAX_INTERSECT_AREAS, Set<RID>(), area_mask, false, true);
+	PhysicsDirectSpaceState2D::PointParameters point_params;
+	point_params.position = global_pos;
+	point_params.collision_mask = area_mask;
+	point_params.collide_with_bodies = false;
+	point_params.collide_with_areas = true;
+
+	int areas = space_state->intersect_point(point_params, sr, MAX_INTERSECT_AREAS);
 
 	for (int i = 0; i < areas; i++) {
 		Area2D *area2d = Object::cast_to<Area2D>(sr[i].collider);
@@ -137,7 +152,7 @@ void AudioStreamPlayer2D::_update_panning() {
 
 	Vector2 global_pos = get_global_position();
 
-	Set<Viewport *> viewports = world_2d->get_viewports();
+	HashSet<Viewport *> viewports = world_2d->get_viewports();
 	viewports.insert(get_viewport()); // TODO: This is a mediocre workaround for #50958. Remove when that bug is fixed!
 
 	volume_vector.resize(4);
@@ -173,9 +188,16 @@ void AudioStreamPlayer2D::_update_panning() {
 		}
 
 		float multiplier = Math::pow(1.0f - dist / max_distance, attenuation);
-		multiplier *= Math::db2linear(volume_db); //also apply player volume!
+		multiplier *= Math::db_to_linear(volume_db); //also apply player volume!
 
-		float pan = CLAMP((relative_to_listener.x + screen_size.x * 0.5) / screen_size.x, 0.0, 1.0);
+		float pan = relative_to_listener.x / screen_size.x;
+		// Don't let the panning effect extend (too far) beyond the screen.
+		pan = CLAMP(pan, -1, 1);
+
+		// Bake in a constant factor here to allow the project setting defaults for 2d and 3d to be normalized to 1.0.
+		pan *= panning_strength * cached_global_panning_strength * 0.5f;
+
+		pan = CLAMP(pan + 0.5, 0.0, 1.0);
 
 		float l = 1.0 - pan;
 		float r = pan;
@@ -212,7 +234,7 @@ float AudioStreamPlayer2D::get_volume_db() const {
 }
 
 void AudioStreamPlayer2D::set_pitch_scale(float p_pitch_scale) {
-	ERR_FAIL_COND(p_pitch_scale <= 0.0);
+	ERR_FAIL_COND(!(p_pitch_scale > 0.0));
 	pitch_scale = p_pitch_scale;
 	for (Ref<AudioStreamPlayback> &playback : stream_playbacks) {
 		AudioServer::get_singleton()->set_playback_pitch_scale(playback, p_pitch_scale);
@@ -231,7 +253,11 @@ void AudioStreamPlayer2D::play(float p_from_pos) {
 	if (stream->is_monophonic() && is_playing()) {
 		stop();
 	}
+	Ref<AudioStreamPlayback> stream_playback = stream->instantiate_playback();
+	ERR_FAIL_COND_MSG(stream_playback.is_null(), "Failed to instantiate playback.");
 
+	stream_playbacks.push_back(stream_playback);
+	setplayback = stream_playback;
 	setplay.set(p_from_pos);
 	active.set();
 	set_physics_process_internal(true);
@@ -259,6 +285,9 @@ bool AudioStreamPlayer2D::is_playing() const {
 		if (AudioServer::get_singleton()->is_playback_active(playback)) {
 			return true;
 		}
+	}
+	if (setplay.get() >= 0) {
+		return true; // play() has been called this frame, but no playback exists just yet.
 	}
 	return false;
 }
@@ -304,8 +333,8 @@ bool AudioStreamPlayer2D::_is_active() const {
 	return active.is_set();
 }
 
-void AudioStreamPlayer2D::_validate_property(PropertyInfo &property) const {
-	if (property.name == "bus") {
+void AudioStreamPlayer2D::_validate_property(PropertyInfo &p_property) const {
+	if (p_property.name == "bus") {
 		String options;
 		for (int i = 0; i < AudioServer::get_singleton()->get_bus_count(); i++) {
 			if (i > 0) {
@@ -315,7 +344,7 @@ void AudioStreamPlayer2D::_validate_property(PropertyInfo &property) const {
 			options += name;
 		}
 
-		property.hint_string = options;
+		p_property.hint_string = options;
 	}
 }
 
@@ -363,11 +392,13 @@ bool AudioStreamPlayer2D::get_stream_paused() const {
 	return false;
 }
 
+bool AudioStreamPlayer2D::has_stream_playback() {
+	return !stream_playbacks.is_empty();
+}
+
 Ref<AudioStreamPlayback> AudioStreamPlayer2D::get_stream_playback() {
-	if (!stream_playbacks.is_empty()) {
-		return stream_playbacks[stream_playbacks.size() - 1];
-	}
-	return nullptr;
+	ERR_FAIL_COND_V_MSG(stream_playbacks.is_empty(), Ref<AudioStreamPlayback>(), "Player is inactive. Call play() before requesting get_stream_playback().");
+	return stream_playbacks[stream_playbacks.size() - 1];
 }
 
 void AudioStreamPlayer2D::set_max_polyphony(int p_max_polyphony) {
@@ -378,6 +409,15 @@ void AudioStreamPlayer2D::set_max_polyphony(int p_max_polyphony) {
 
 int AudioStreamPlayer2D::get_max_polyphony() const {
 	return max_polyphony;
+}
+
+void AudioStreamPlayer2D::set_panning_strength(float p_panning_strength) {
+	ERR_FAIL_COND_MSG(p_panning_strength < 0, "Panning strength must be a positive number.");
+	panning_strength = p_panning_strength;
+}
+
+float AudioStreamPlayer2D::get_panning_strength() const {
+	return panning_strength;
 }
 
 void AudioStreamPlayer2D::_bind_methods() {
@@ -421,17 +461,22 @@ void AudioStreamPlayer2D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_max_polyphony", "max_polyphony"), &AudioStreamPlayer2D::set_max_polyphony);
 	ClassDB::bind_method(D_METHOD("get_max_polyphony"), &AudioStreamPlayer2D::get_max_polyphony);
 
+	ClassDB::bind_method(D_METHOD("set_panning_strength", "panning_strength"), &AudioStreamPlayer2D::set_panning_strength);
+	ClassDB::bind_method(D_METHOD("get_panning_strength"), &AudioStreamPlayer2D::get_panning_strength);
+
+	ClassDB::bind_method(D_METHOD("has_stream_playback"), &AudioStreamPlayer2D::has_stream_playback);
 	ClassDB::bind_method(D_METHOD("get_stream_playback"), &AudioStreamPlayer2D::get_stream_playback);
 
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "stream", PROPERTY_HINT_RESOURCE_TYPE, "AudioStream"), "set_stream", "get_stream");
-	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "volume_db", PROPERTY_HINT_RANGE, "-80,24"), "set_volume_db", "get_volume_db");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "volume_db", PROPERTY_HINT_RANGE, "-80,24,suffix:dB"), "set_volume_db", "get_volume_db");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "pitch_scale", PROPERTY_HINT_RANGE, "0.01,4,0.01,or_greater"), "set_pitch_scale", "get_pitch_scale");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "playing", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_EDITOR), "_set_playing", "is_playing");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "autoplay"), "set_autoplay", "is_autoplay_enabled");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "stream_paused", PROPERTY_HINT_NONE, ""), "set_stream_paused", "get_stream_paused");
-	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "max_distance", PROPERTY_HINT_RANGE, "1,4096,1,or_greater,exp"), "set_max_distance", "get_max_distance");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "max_distance", PROPERTY_HINT_RANGE, "1,4096,1,or_greater,exp,suffix:px"), "set_max_distance", "get_max_distance");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "attenuation", PROPERTY_HINT_EXP_EASING, "attenuation"), "set_attenuation", "get_attenuation");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "max_polyphony", PROPERTY_HINT_NONE, ""), "set_max_polyphony", "get_max_polyphony");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "panning_strength", PROPERTY_HINT_RANGE, "0,3,0.01,or_greater"), "set_panning_strength", "get_panning_strength");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING_NAME, "bus", PROPERTY_HINT_ENUM, ""), "set_bus", "get_bus");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "area_mask", PROPERTY_HINT_LAYERS_2D_PHYSICS), "set_area_mask", "get_area_mask");
 
@@ -440,6 +485,8 @@ void AudioStreamPlayer2D::_bind_methods() {
 
 AudioStreamPlayer2D::AudioStreamPlayer2D() {
 	AudioServer::get_singleton()->connect("bus_layout_changed", callable_mp(this, &AudioStreamPlayer2D::_bus_layout_changed));
+	cached_global_panning_strength = GLOBAL_GET("audio/general/2d_panning_strength");
+	set_hide_clip_children(true);
 }
 
 AudioStreamPlayer2D::~AudioStreamPlayer2D() {

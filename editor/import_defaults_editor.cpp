@@ -1,41 +1,52 @@
-/*************************************************************************/
-/*  import_defaults_editor.cpp                                           */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  import_defaults_editor.cpp                                            */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #include "import_defaults_editor.h"
+
+#include "core/config/project_settings.h"
+#include "core/io/resource_importer.h"
+#include "editor/action_map_editor.h"
+#include "editor/editor_autoload_settings.h"
+#include "editor/editor_plugin_settings.h"
+#include "editor/editor_sectioned_inspector.h"
+#include "editor/editor_settings.h"
+#include "editor/localization_editor.h"
+#include "editor/shader_globals_editor.h"
+#include "scene/gui/center_container.h"
 
 class ImportDefaultsEditorSettings : public Object {
 	GDCLASS(ImportDefaultsEditorSettings, Object)
 	friend class ImportDefaultsEditor;
 	List<PropertyInfo> properties;
-	Map<StringName, Variant> values;
-	Map<StringName, Variant> default_values;
+	HashMap<StringName, Variant> values;
+	HashMap<StringName, Variant> default_values;
 
 	Ref<ResourceImporter> importer;
 
@@ -62,7 +73,7 @@ protected:
 			return;
 		}
 		for (const PropertyInfo &E : properties) {
-			if (importer->get_option_visibility(E.name, values)) {
+			if (importer->get_option_visibility("", E.name, values)) {
 				p_list->push_back(E);
 			}
 		}
@@ -70,8 +81,15 @@ protected:
 };
 
 void ImportDefaultsEditor::_notification(int p_what) {
-	if (p_what == NOTIFICATION_PREDELETE) {
-		inspector->edit(nullptr);
+	switch (p_what) {
+		case NOTIFICATION_ENTER_TREE:
+		case EditorSettings::NOTIFICATION_EDITOR_SETTINGS_CHANGED: {
+			inspector->set_property_name_style(EditorPropertyNameProcessor::get_settings_style());
+		} break;
+
+		case NOTIFICATION_PREDELETE: {
+			inspector->edit(nullptr);
+		} break;
 	}
 }
 
@@ -119,10 +137,10 @@ void ImportDefaultsEditor::_update_importer() {
 
 	if (importer.is_valid()) {
 		List<ResourceImporter::ImportOption> options;
-		importer->get_import_options(&options);
+		importer->get_import_options("", &options);
 		Dictionary d;
 		if (ProjectSettings::get_singleton()->has_setting("importer_defaults/" + importer->get_importer_name())) {
-			d = ProjectSettings::get_singleton()->get("importer_defaults/" + importer->get_importer_name());
+			d = GLOBAL_GET("importer_defaults/" + importer->get_importer_name());
 		}
 
 		for (const ResourceImporter::ImportOption &E : options) {

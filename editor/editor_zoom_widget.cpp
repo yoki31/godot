@@ -1,32 +1,32 @@
-/*************************************************************************/
-/*  editor_zoom_widget.cpp                                               */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  editor_zoom_widget.cpp                                                */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #include "editor_zoom_widget.h"
 
@@ -41,17 +41,17 @@ void EditorZoomWidget::_update_zoom_label() {
 	// lower the editor scale to increase the available real estate,
 	// even if their display doesn't have a particularly low DPI.
 	if (zoom >= 10) {
-		// Don't show a decimal when the zoom level is higher than 1000 %.
-		zoom_text = TS->format_number(rtos(Math::round((zoom / MAX(1, EDSCALE)) * 100))) + " " + TS->percent_sign();
+		zoom_text = TS->format_number(rtos(Math::round((zoom / MAX(1, EDSCALE)) * 100)));
 	} else {
-		zoom_text = TS->format_number(rtos(Math::snapped((zoom / MAX(1, EDSCALE)) * 100, 0.1))) + " " + TS->percent_sign();
+		// 2 decimal places if the zoom is below 10%, 1 decimal place if it's below 1000%.
+		zoom_text = TS->format_number(rtos(Math::snapped((zoom / MAX(1, EDSCALE)) * 100, (zoom >= 0.1) ? 0.1 : 0.01)));
 	}
-
+	zoom_text += " " + TS->percent_sign();
 	zoom_reset->set_text(zoom_text);
 }
 
 void EditorZoomWidget::_button_zoom_minus() {
-	set_zoom_by_increments(-6, Input::get_singleton()->is_key_pressed(KEY_ALT));
+	set_zoom_by_increments(-6, Input::get_singleton()->is_key_pressed(Key::ALT));
 	emit_signal(SNAME("zoom_changed"), zoom);
 }
 
@@ -61,7 +61,7 @@ void EditorZoomWidget::_button_zoom_reset() {
 }
 
 void EditorZoomWidget::_button_zoom_plus() {
-	set_zoom_by_increments(6, Input::get_singleton()->is_key_pressed(KEY_ALT));
+	set_zoom_by_increments(6, Input::get_singleton()->is_key_pressed(Key::ALT));
 	emit_signal(SNAME("zoom_changed"), zoom);
 }
 
@@ -134,7 +134,7 @@ void EditorZoomWidget::set_zoom_by_increments(int p_increment_count, bool p_inte
 		float new_zoom_index = closest_zoom_index + p_increment_count;
 		float new_zoom = Math::pow(2.f, new_zoom_index / 12.f);
 
-		// Restore Editor scale transformation
+		// Restore Editor scale transformation.
 		new_zoom *= MAX(1, EDSCALE);
 
 		set_zoom(new_zoom);
@@ -144,12 +144,10 @@ void EditorZoomWidget::set_zoom_by_increments(int p_increment_count, bool p_inte
 void EditorZoomWidget::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_ENTER_TREE:
-		case NOTIFICATION_THEME_CHANGED:
+		case NOTIFICATION_THEME_CHANGED: {
 			zoom_minus->set_icon(get_theme_icon(SNAME("ZoomLess"), SNAME("EditorIcons")));
 			zoom_plus->set_icon(get_theme_icon(SNAME("ZoomMore"), SNAME("EditorIcons")));
-			break;
-		default:
-			break;
+		} break;
 	}
 }
 
@@ -163,39 +161,49 @@ void EditorZoomWidget::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("zoom_changed", PropertyInfo(Variant::FLOAT, "zoom")));
 }
 
+void EditorZoomWidget::set_shortcut_context(Node *p_node) const {
+	zoom_minus->set_shortcut_context(p_node);
+	zoom_plus->set_shortcut_context(p_node);
+	zoom_reset->set_shortcut_context(p_node);
+}
+
 EditorZoomWidget::EditorZoomWidget() {
 	// Zoom buttons
 	zoom_minus = memnew(Button);
 	zoom_minus->set_flat(true);
 	add_child(zoom_minus);
 	zoom_minus->connect("pressed", callable_mp(this, &EditorZoomWidget::_button_zoom_minus));
-	zoom_minus->set_shortcut(ED_SHORTCUT("canvas_item_editor/zoom_minus", TTR("Zoom Out"), KEY_MASK_CMD | KEY_MINUS));
+	zoom_minus->set_shortcut(ED_SHORTCUT_ARRAY("canvas_item_editor/zoom_minus", TTR("Zoom Out"), { int32_t(KeyModifierMask::CMD_OR_CTRL | Key::MINUS), int32_t(KeyModifierMask::CMD_OR_CTRL | Key::KP_SUBTRACT) }));
 	zoom_minus->set_shortcut_context(this);
 	zoom_minus->set_focus_mode(FOCUS_NONE);
 
 	zoom_reset = memnew(Button);
 	zoom_reset->set_flat(true);
+	zoom_reset->add_theme_style_override("normal", memnew(StyleBoxEmpty));
+	zoom_reset->add_theme_style_override("hover", memnew(StyleBoxEmpty));
+	zoom_reset->add_theme_style_override("focus", memnew(StyleBoxEmpty));
+	zoom_reset->add_theme_style_override("pressed", memnew(StyleBoxEmpty));
 	add_child(zoom_reset);
-	zoom_reset->add_theme_constant_override("outline_size", 1);
+	zoom_reset->add_theme_constant_override("outline_size", Math::ceil(2 * EDSCALE));
 	zoom_reset->add_theme_color_override("font_outline_color", Color(0, 0, 0));
 	zoom_reset->add_theme_color_override("font_color", Color(1, 1, 1));
 	zoom_reset->connect("pressed", callable_mp(this, &EditorZoomWidget::_button_zoom_reset));
-	zoom_reset->set_shortcut(ED_SHORTCUT("canvas_item_editor/zoom_reset", TTR("Zoom Reset"), KEY_MASK_CMD | KEY_0));
+	zoom_reset->set_shortcut(ED_GET_SHORTCUT("canvas_item_editor/zoom_100_percent"));
 	zoom_reset->set_shortcut_context(this);
 	zoom_reset->set_focus_mode(FOCUS_NONE);
-	zoom_reset->set_text_align(Button::TextAlign::ALIGN_CENTER);
+	zoom_reset->set_text_alignment(HORIZONTAL_ALIGNMENT_CENTER);
 	// Prevent the button's size from changing when the text size changes
-	zoom_reset->set_custom_minimum_size(Size2(75 * EDSCALE, 0));
+	zoom_reset->set_custom_minimum_size(Size2(56 * EDSCALE, 0));
 
 	zoom_plus = memnew(Button);
 	zoom_plus->set_flat(true);
 	add_child(zoom_plus);
 	zoom_plus->connect("pressed", callable_mp(this, &EditorZoomWidget::_button_zoom_plus));
-	zoom_plus->set_shortcut(ED_SHORTCUT("canvas_item_editor/zoom_plus", TTR("Zoom In"), KEY_MASK_CMD | KEY_EQUAL)); // Usually direct access key for PLUS
+	zoom_plus->set_shortcut(ED_SHORTCUT_ARRAY("canvas_item_editor/zoom_plus", TTR("Zoom In"), { int32_t(KeyModifierMask::CMD_OR_CTRL | Key::EQUAL), int32_t(KeyModifierMask::CMD_OR_CTRL | Key::KP_ADD) }));
 	zoom_plus->set_shortcut_context(this);
 	zoom_plus->set_focus_mode(FOCUS_NONE);
 
 	_update_zoom_label();
 
-	add_theme_constant_override("separation", Math::round(-8 * EDSCALE));
+	add_theme_constant_override("separation", 0);
 }

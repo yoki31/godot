@@ -1,40 +1,46 @@
-/*************************************************************************/
-/*  cpu_particles_2d_editor_plugin.cpp                                   */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  cpu_particles_2d_editor_plugin.cpp                                    */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #include "cpu_particles_2d_editor_plugin.h"
 
 #include "canvas_item_editor_plugin.h"
 #include "core/io/image_loader.h"
+#include "editor/editor_file_dialog.h"
+#include "editor/editor_node.h"
 #include "scene/2d/cpu_particles_2d.h"
+#include "scene/gui/check_box.h"
+#include "scene/gui/menu_button.h"
+#include "scene/gui/option_button.h"
 #include "scene/gui/separator.h"
-#include "scene/resources/particles_material.h"
+#include "scene/gui/spin_box.h"
+#include "scene/resources/particle_process_material.h"
 
 void CPUParticles2DEditorPlugin::edit(Object *p_object) {
 	particles = Object::cast_to<CPUParticles2D>(p_object);
@@ -107,8 +113,8 @@ void CPUParticles2DEditorPlugin::_generate_emission_mask() {
 	int vpc = 0;
 
 	{
-		Vector<uint8_t> data = img->get_data();
-		const uint8_t *r = data.ptr();
+		Vector<uint8_t> img_data = img->get_data();
+		const uint8_t *r = img_data.ptr();
 
 		for (int i = 0; i < s.width; i++) {
 			for (int j = 0; j < s.height; j++) {
@@ -222,20 +228,20 @@ void CPUParticles2DEditorPlugin::_generate_emission_mask() {
 }
 
 void CPUParticles2DEditorPlugin::_notification(int p_what) {
-	if (p_what == NOTIFICATION_ENTER_TREE) {
-		menu->get_popup()->connect("id_pressed", callable_mp(this, &CPUParticles2DEditorPlugin::_menu_callback));
-		menu->set_icon(epoints->get_theme_icon(SNAME("CPUParticles2D"), SNAME("EditorIcons")));
-		file->connect("file_selected", callable_mp(this, &CPUParticles2DEditorPlugin::_file_selected));
+	switch (p_what) {
+		case NOTIFICATION_ENTER_TREE: {
+			menu->get_popup()->connect("id_pressed", callable_mp(this, &CPUParticles2DEditorPlugin::_menu_callback));
+			menu->set_icon(epoints->get_theme_icon(SNAME("CPUParticles2D"), SNAME("EditorIcons")));
+			file->connect("file_selected", callable_mp(this, &CPUParticles2DEditorPlugin::_file_selected));
+		} break;
 	}
 }
 
 void CPUParticles2DEditorPlugin::_bind_methods() {
 }
 
-CPUParticles2DEditorPlugin::CPUParticles2DEditorPlugin(EditorNode *p_node) {
+CPUParticles2DEditorPlugin::CPUParticles2DEditorPlugin() {
 	particles = nullptr;
-	editor = p_node;
-	undo_redo = editor->get_undo_redo();
 
 	toolbar = memnew(HBoxContainer);
 	add_control_to_container(CONTAINER_CANVAS_EDITOR_MENU, toolbar);
@@ -254,7 +260,7 @@ CPUParticles2DEditorPlugin::CPUParticles2DEditorPlugin(EditorNode *p_node) {
 	List<String> ext;
 	ImageLoader::get_recognized_extensions(&ext);
 	for (const String &E : ext) {
-		file->add_filter("*." + E + "; " + E.to_upper());
+		file->add_filter("*." + E, E.to_upper());
 	}
 	file->set_file_mode(EditorFileDialog::FILE_MODE_OPEN_FILE);
 	toolbar->add_child(file);

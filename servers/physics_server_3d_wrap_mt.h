@@ -1,32 +1,32 @@
-/*************************************************************************/
-/*  physics_server_3d_wrap_mt.h                                          */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  physics_server_3d_wrap_mt.h                                           */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #ifndef PHYSICS_SERVER_3D_WRAP_MT_H
 #define PHYSICS_SERVER_3D_WRAP_MT_H
@@ -43,7 +43,7 @@
 #endif
 
 class PhysicsServer3DWrapMT : public PhysicsServer3D {
-	mutable PhysicsServer3D *physics_3d_server;
+	mutable PhysicsServer3D *physics_server_3d;
 
 	mutable CommandQueueMT command_queue;
 
@@ -70,7 +70,7 @@ class PhysicsServer3DWrapMT : public PhysicsServer3D {
 public:
 #define ServerName PhysicsServer3D
 #define ServerNameWrapMT PhysicsServer3DWrapMT
-#define server_name physics_3d_server
+#define server_name physics_server_3d
 #define WRITE_ACTION
 
 #include "servers/server_wrap_mt_common.h"
@@ -100,7 +100,7 @@ public:
 	//these work well, but should be used from the main thread only
 	bool shape_collide(RID p_shape_A, const Transform &p_xform_A, const Vector3 &p_motion_A, RID p_shape_B, const Transform &p_xform_B, const Vector3 &p_motion_B, Vector3 *r_results, int p_result_max, int &r_result_count) {
 		ERR_FAIL_COND_V(main_thread != Thread::get_caller_id(), false);
-		return physics_3d_server->shape_collide(p_shape_A, p_xform_A, p_motion_A, p_shape_B, p_xform_B, p_motion_B, r_results, p_result_max, r_result_count);
+		return physics_server_3d->shape_collide(p_shape_A, p_xform_A, p_motion_A, p_shape_B, p_xform_B, p_motion_B, r_results, p_result_max, r_result_count);
 	}
 #endif
 	/* SPACE API */
@@ -115,18 +115,18 @@ public:
 	// this function only works on physics process, errors and returns null otherwise
 	PhysicsDirectSpaceState3D *space_get_direct_state(RID p_space) override {
 		ERR_FAIL_COND_V(main_thread != Thread::get_caller_id(), nullptr);
-		return physics_3d_server->space_get_direct_state(p_space);
+		return physics_server_3d->space_get_direct_state(p_space);
 	}
 
 	FUNC2(space_set_debug_contacts, RID, int);
 	virtual Vector<Vector3> space_get_contacts(RID p_space) const override {
 		ERR_FAIL_COND_V(main_thread != Thread::get_caller_id(), Vector<Vector3>());
-		return physics_3d_server->space_get_contacts(p_space);
+		return physics_server_3d->space_get_contacts(p_space);
 	}
 
 	virtual int space_get_contact_count(RID p_space) const override {
 		ERR_FAIL_COND_V(main_thread != Thread::get_caller_id(), 0);
-		return physics_3d_server->space_get_contact_count(p_space);
+		return physics_server_3d->space_get_contact_count(p_space);
 	}
 
 	/* AREA API */
@@ -136,9 +136,6 @@ public:
 
 	FUNC2(area_set_space, RID, RID);
 	FUNC1RC(RID, area_get_space, RID);
-
-	FUNC2(area_set_space_override_mode, RID, AreaSpaceOverrideMode);
-	FUNC1RC(AreaSpaceOverrideMode, area_get_space_override_mode, RID);
 
 	FUNC4(area_add_shape, RID, RID, const Transform3D &, bool);
 	FUNC3(area_set_shape, RID, int, RID);
@@ -160,14 +157,17 @@ public:
 	FUNC2RC(Variant, area_get_param, RID, AreaParameter);
 	FUNC1RC(Transform3D, area_get_transform, RID);
 
-	FUNC2(area_set_collision_mask, RID, uint32_t);
 	FUNC2(area_set_collision_layer, RID, uint32_t);
+	FUNC1RC(uint32_t, area_get_collision_layer, RID);
+
+	FUNC2(area_set_collision_mask, RID, uint32_t);
+	FUNC1RC(uint32_t, area_get_collision_mask, RID);
 
 	FUNC2(area_set_monitorable, RID, bool);
 	FUNC2(area_set_ray_pickable, RID, bool);
 
-	FUNC3(area_set_monitor_callback, RID, Object *, const StringName &);
-	FUNC3(area_set_area_monitor_callback, RID, Object *, const StringName &);
+	FUNC2(area_set_monitor_callback, RID, const Callable &);
+	FUNC2(area_set_area_monitor_callback, RID, const Callable &);
 
 	/* BODY API */
 
@@ -205,6 +205,9 @@ public:
 	FUNC2(body_set_collision_mask, RID, uint32_t);
 	FUNC1RC(uint32_t, body_get_collision_mask, RID);
 
+	FUNC2(body_set_collision_priority, RID, real_t);
+	FUNC1RC(real_t, body_get_collision_priority, RID);
+
 	FUNC2(body_set_user_flags, RID, uint32_t);
 	FUNC1RC(uint32_t, body_get_user_flags, RID);
 
@@ -216,18 +219,24 @@ public:
 	FUNC3(body_set_state, RID, BodyState, const Variant &);
 	FUNC2RC(Variant, body_get_state, RID, BodyState);
 
-	FUNC2(body_set_applied_force, RID, const Vector3 &);
-	FUNC1RC(Vector3, body_get_applied_force, RID);
-
-	FUNC2(body_set_applied_torque, RID, const Vector3 &);
-	FUNC1RC(Vector3, body_get_applied_torque, RID);
-
-	FUNC2(body_add_central_force, RID, const Vector3 &);
-	FUNC3(body_add_force, RID, const Vector3 &, const Vector3 &);
-	FUNC2(body_add_torque, RID, const Vector3 &);
 	FUNC2(body_apply_torque_impulse, RID, const Vector3 &);
 	FUNC2(body_apply_central_impulse, RID, const Vector3 &);
 	FUNC3(body_apply_impulse, RID, const Vector3 &, const Vector3 &);
+
+	FUNC2(body_apply_central_force, RID, const Vector3 &);
+	FUNC3(body_apply_force, RID, const Vector3 &, const Vector3 &);
+	FUNC2(body_apply_torque, RID, const Vector3 &);
+
+	FUNC2(body_add_constant_central_force, RID, const Vector3 &);
+	FUNC3(body_add_constant_force, RID, const Vector3 &, const Vector3 &);
+	FUNC2(body_add_constant_torque, RID, const Vector3 &);
+
+	FUNC2(body_set_constant_force, RID, const Vector3 &);
+	FUNC1RC(Vector3, body_get_constant_force, RID);
+
+	FUNC2(body_set_constant_torque, RID, const Vector3 &);
+	FUNC1RC(Vector3, body_get_constant_torque, RID);
+
 	FUNC2(body_set_axis_velocity, RID, const Vector3 &);
 
 	FUNC3(body_set_axis_lock, RID, BodyAxis, bool);
@@ -246,27 +255,27 @@ public:
 	FUNC2(body_set_omit_force_integration, RID, bool);
 	FUNC1RC(bool, body_is_omitting_force_integration, RID);
 
-	FUNC3(body_set_state_sync_callback, RID, void *, BodyStateCallback);
+	FUNC2(body_set_state_sync_callback, RID, const Callable &);
 	FUNC3(body_set_force_integration_callback, RID, const Callable &, const Variant &);
 
 	FUNC2(body_set_ray_pickable, RID, bool);
 
 	bool body_test_motion(RID p_body, const MotionParameters &p_parameters, MotionResult *r_result = nullptr) override {
 		ERR_FAIL_COND_V(main_thread != Thread::get_caller_id(), false);
-		return physics_3d_server->body_test_motion(p_body, p_parameters, r_result);
+		return physics_server_3d->body_test_motion(p_body, p_parameters, r_result);
 	}
 
 	// this function only works on physics process, errors and returns null otherwise
 	PhysicsDirectBodyState3D *body_get_direct_state(RID p_body) override {
 		ERR_FAIL_COND_V(main_thread != Thread::get_caller_id(), nullptr);
-		return physics_3d_server->body_get_direct_state(p_body);
+		return physics_server_3d->body_get_direct_state(p_body);
 	}
 
 	/* SOFT BODY API */
 
 	FUNCRID(soft_body)
 
-	FUNC2(soft_body_update_rendering_server, RID, class RenderingServerHandler *)
+	FUNC2(soft_body_update_rendering_server, RID, PhysicsServer3DRenderingServerHandler *)
 
 	FUNC2(soft_body_set_space, RID, RID)
 	FUNC1RC(RID, soft_body_get_space, RID)
@@ -366,14 +375,13 @@ public:
 	FUNC2(joint_set_solver_priority, RID, int);
 	FUNC1RC(int, joint_get_solver_priority, RID);
 
-	FUNC2(joint_disable_collisions_between_bodies, RID, const bool);
+	FUNC2(joint_disable_collisions_between_bodies, RID, bool);
 	FUNC1RC(bool, joint_is_disabled_collisions_between_bodies, RID);
 
 	/* MISC */
 
 	FUNC1(free, RID);
 	FUNC1(set_active, bool);
-	FUNC1(set_collision_iterations, int);
 
 	virtual void init() override;
 	virtual void step(real_t p_step) override;
@@ -383,11 +391,11 @@ public:
 	virtual void finish() override;
 
 	virtual bool is_flushing_queries() const override {
-		return physics_3d_server->is_flushing_queries();
+		return physics_server_3d->is_flushing_queries();
 	}
 
 	int get_process_info(ProcessInfo p_info) override {
-		return physics_3d_server->get_process_info(p_info);
+		return physics_server_3d->get_process_info(p_info);
 	}
 
 	PhysicsServer3DWrapMT(PhysicsServer3D *p_contained, bool p_create_thread);

@@ -1,51 +1,55 @@
-/*************************************************************************/
-/*  spring_arm_3d.cpp                                                    */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  spring_arm_3d.cpp                                                     */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #include "spring_arm_3d.h"
+
 #include "scene/3d/camera_3d.h"
+#include "scene/resources/shape_3d.h"
 
 void SpringArm3D::_notification(int p_what) {
 	switch (p_what) {
-		case NOTIFICATION_ENTER_TREE:
+		case NOTIFICATION_ENTER_TREE: {
 			if (!Engine::get_singleton()->is_editor_hint()) {
 				set_physics_process_internal(true);
 			}
-			break;
-		case NOTIFICATION_EXIT_TREE:
+		} break;
+
+		case NOTIFICATION_EXIT_TREE: {
 			if (!Engine::get_singleton()->is_editor_hint()) {
 				set_physics_process_internal(false);
 			}
-			break;
-		case NOTIFICATION_INTERNAL_PHYSICS_PROCESS:
+		} break;
+
+		case NOTIFICATION_INTERNAL_PHYSICS_PROCESS: {
 			process_spring();
-			break;
+		} break;
 	}
 }
 
@@ -70,8 +74,8 @@ void SpringArm3D::_bind_methods() {
 
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "collision_mask", PROPERTY_HINT_LAYERS_3D_PHYSICS), "set_collision_mask", "get_collision_mask");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "shape", PROPERTY_HINT_RESOURCE_TYPE, "Shape3D"), "set_shape", "get_shape");
-	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "spring_length"), "set_length", "get_length");
-	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "margin"), "set_margin", "get_margin");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "spring_length", PROPERTY_HINT_NONE, "suffix:m"), "set_length", "get_length");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "margin", PROPERTY_HINT_NONE, "suffix:m"), "set_margin", "get_margin");
 }
 
 real_t SpringArm3D::get_length() const {
@@ -149,10 +153,24 @@ void SpringArm3D::process_spring() {
 			//use camera rotation, but spring arm position
 			Transform3D base_transform = camera->get_global_transform();
 			base_transform.origin = get_global_transform().origin;
-			get_world_3d()->get_direct_space_state()->cast_motion(camera->get_pyramid_shape_rid(), base_transform, motion, 0, motion_delta, motion_delta_unsafe, excluded_objects, mask);
+
+			PhysicsDirectSpaceState3D::ShapeParameters shape_params;
+			shape_params.shape_rid = camera->get_pyramid_shape_rid();
+			shape_params.transform = base_transform;
+			shape_params.motion = motion;
+			shape_params.exclude = excluded_objects;
+			shape_params.collision_mask = mask;
+
+			get_world_3d()->get_direct_space_state()->cast_motion(shape_params, motion_delta, motion_delta_unsafe);
 		} else {
+			PhysicsDirectSpaceState3D::RayParameters ray_params;
+			ray_params.from = get_global_transform().origin;
+			ray_params.to = get_global_transform().origin + motion;
+			ray_params.exclude = excluded_objects;
+			ray_params.collision_mask = mask;
+
 			PhysicsDirectSpaceState3D::RayResult r;
-			bool intersected = get_world_3d()->get_direct_space_state()->intersect_ray(get_global_transform().origin, get_global_transform().origin + motion, r, excluded_objects, mask);
+			bool intersected = get_world_3d()->get_direct_space_state()->intersect_ray(ray_params, r);
 			if (intersected) {
 				real_t dist = get_global_transform().origin.distance_to(r.position);
 				dist -= margin;
@@ -160,18 +178,25 @@ void SpringArm3D::process_spring() {
 			}
 		}
 	} else {
-		get_world_3d()->get_direct_space_state()->cast_motion(shape->get_rid(), get_global_transform(), motion, 0, motion_delta, motion_delta_unsafe, excluded_objects, mask);
+		PhysicsDirectSpaceState3D::ShapeParameters shape_params;
+		shape_params.shape_rid = shape->get_rid();
+		shape_params.transform = get_global_transform();
+		shape_params.motion = motion;
+		shape_params.exclude = excluded_objects;
+		shape_params.collision_mask = mask;
+
+		get_world_3d()->get_direct_space_state()->cast_motion(shape_params, motion_delta, motion_delta_unsafe);
 	}
 
 	current_spring_length = spring_length * motion_delta;
-	Transform3D childs_transform;
-	childs_transform.origin = get_global_transform().origin + cast_direction * (spring_length * motion_delta);
+	Transform3D child_transform;
+	child_transform.origin = get_global_transform().origin + cast_direction * (spring_length * motion_delta);
 
 	for (int i = get_child_count() - 1; 0 <= i; --i) {
 		Node3D *child = Object::cast_to<Node3D>(get_child(i));
 		if (child) {
-			childs_transform.basis = child->get_global_transform().basis;
-			child->set_global_transform(childs_transform);
+			child_transform.basis = child->get_global_transform().basis;
+			child->set_global_transform(child_transform);
 		}
 	}
 }

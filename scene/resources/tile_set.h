@@ -1,32 +1,32 @@
-/*************************************************************************/
-/*  tile_set.h                                                           */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  tile_set.h                                                            */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #ifndef TILE_SET_H
 #define TILE_SET_H
@@ -34,11 +34,12 @@
 #include "core/io/resource.h"
 #include "core/object/object.h"
 #include "core/templates/local_vector.h"
+#include "core/templates/rb_set.h"
 #include "scene/2d/light_occluder_2d.h"
-#include "scene/2d/navigation_region_2d.h"
 #include "scene/main/canvas_item.h"
 #include "scene/resources/concave_polygon_shape_2d.h"
 #include "scene/resources/convex_polygon_shape_2d.h"
+#include "scene/resources/navigation_polygon.h"
 #include "scene/resources/packed_scene.h"
 #include "scene/resources/physics_material.h"
 #include "scene/resources/shape_2d.h"
@@ -69,6 +70,11 @@ union TileMapCell {
 	};
 
 	uint64_t _u64t;
+
+	static uint32_t hash(const TileMapCell &p_hash) {
+		return hash_one_uint64(p_hash._u64t);
+	}
+
 	TileMapCell(int p_source_id = -1, Vector2i p_atlas_coords = Vector2i(-1, -1), int p_alternative_tile = -1) { // default are INVALID_SOURCE, INVALID_ATLAS_COORDS, INVALID_TILE_ALTERNATIVE
 		source_id = p_source_id;
 		set_atlas_coords(p_atlas_coords);
@@ -103,13 +109,16 @@ union TileMapCell {
 	bool operator!=(const TileMapCell &p_other) const {
 		return !(source_id == p_other.source_id && coord_x == p_other.coord_x && coord_y == p_other.coord_y && alternative_tile == p_other.alternative_tile);
 	}
+	bool operator==(const TileMapCell &p_other) const {
+		return source_id == p_other.source_id && coord_x == p_other.coord_x && coord_y == p_other.coord_y && alternative_tile == p_other.alternative_tile;
+	}
 };
 
 class TileMapPattern : public Resource {
 	GDCLASS(TileMapPattern, Resource);
 
-	Vector2i size;
-	Map<Vector2i, TileMapCell> pattern;
+	Size2i size;
+	HashMap<Vector2i, TileMapCell> pattern;
 
 	void _set_tile_data(const Vector<int> &p_data);
 	Vector<int> _get_tile_data() const;
@@ -131,8 +140,8 @@ public:
 
 	TypedArray<Vector2i> get_used_cells() const;
 
-	Vector2i get_size() const;
-	void set_size(const Vector2i &p_size);
+	Size2i get_size() const;
+	void set_size(const Size2i &p_size);
 	bool is_empty() const;
 
 	void clear();
@@ -155,7 +164,7 @@ private:
 		String name;
 		Ref<Texture2D> texture;
 		Vector2 tex_offset;
-		Ref<ShaderMaterial> material;
+		Ref<Material> material;
 		Rect2 region;
 		int tile_mode = 0;
 		Color modulate = Color(1, 1, 1);
@@ -166,11 +175,11 @@ private:
 		Size2i autotile_tile_size = Size2i(16, 16);
 
 		int autotile_spacing = 0;
-		Map<Vector2i, int> autotile_bitmask_flags;
-		Map<Vector2i, Ref<OccluderPolygon2D>> autotile_occluder_map;
-		Map<Vector2i, Ref<NavigationPolygon>> autotile_navpoly_map;
-		Map<Vector2i, int> autotile_priority_map;
-		Map<Vector2i, int> autotile_z_index_map;
+		HashMap<Vector2i, int> autotile_bitmask_flags;
+		HashMap<Vector2i, Ref<OccluderPolygon2D>> autotile_occluder_map;
+		HashMap<Vector2i, Ref<NavigationPolygon>> autotile_navpoly_map;
+		HashMap<Vector2i, int> autotile_priority_map;
+		HashMap<Vector2i, int> autotile_z_index_map;
 
 		Vector<CompatibilityShapeData> shapes;
 		Ref<OccluderPolygon2D> occluder;
@@ -186,9 +195,10 @@ private:
 		COMPATIBILITY_TILE_MODE_ATLAS_TILE,
 	};
 
-	Map<int, CompatibilityTileData *> compatibility_data;
-	Map<int, int> compatibility_tilemap_mapping_tile_modes;
-	Map<int, Map<Array, Array>> compatibility_tilemap_mapping;
+	HashMap<int, CompatibilityTileData *> compatibility_data;
+	HashMap<int, int> compatibility_tilemap_mapping_tile_modes;
+	HashMap<int, RBMap<Array, Array>> compatibility_tilemap_mapping;
+	HashMap<Vector2i, int> compatibility_size_count;
 
 	void _compatibility_conversion();
 
@@ -254,11 +264,42 @@ public:
 		Vector2 offset;
 	};
 
+	class TerrainsPattern {
+		bool valid = false;
+		int terrain = -1;
+		int bits[TileSet::CELL_NEIGHBOR_MAX];
+		bool is_valid_bit[TileSet::CELL_NEIGHBOR_MAX];
+
+		int not_empty_terrains_count = 0;
+
+	public:
+		bool is_valid() const;
+		bool is_erase_pattern() const;
+
+		bool operator<(const TerrainsPattern &p_terrains_pattern) const;
+		bool operator==(const TerrainsPattern &p_terrains_pattern) const;
+		bool operator!=(const TerrainsPattern &p_terrains_pattern) const {
+			return !operator==(p_terrains_pattern);
+		};
+
+		void set_terrain(int p_terrain);
+		int get_terrain() const;
+
+		void set_terrain_peering_bit(TileSet::CellNeighbor p_peering_bit, int p_terrain);
+		int get_terrain_peering_bit(TileSet::CellNeighbor p_peering_bit) const;
+
+		void from_array(Array p_terrains);
+		Array as_array() const;
+
+		TerrainsPattern(const TileSet *p_tile_set, int p_terrain_set);
+		TerrainsPattern() {}
+	};
+
 protected:
 	bool _set(const StringName &p_name, const Variant &p_value);
 	bool _get(const StringName &p_name, Variant &r_ret) const;
 	void _get_property_list(List<PropertyInfo> *p_list) const;
-	virtual void _validate_property(PropertyInfo &property) const override;
+	void _validate_property(PropertyInfo &p_property) const;
 
 private:
 	// --- TileSet data ---
@@ -267,7 +308,6 @@ private:
 	TileLayout tile_layout = TILE_LAYOUT_STACKED;
 	TileOffsetAxis tile_offset_axis = TILE_OFFSET_AXIS_HORIZONTAL;
 	Size2i tile_size = Size2i(16, 16); //Size2(64, 64);
-	Vector2 tile_skew = Vector2(0, 0);
 
 	// Rendering.
 	bool uv_clipping = false;
@@ -300,8 +340,13 @@ private:
 	};
 	Vector<TerrainSet> terrain_sets;
 
-	Map<TerrainMode, Map<CellNeighbor, Ref<ArrayMesh>>> terrain_bits_meshes;
+	HashMap<TerrainMode, Ref<ArrayMesh>> terrain_meshes;
+	HashMap<TerrainMode, HashMap<CellNeighbor, Ref<ArrayMesh>>> terrain_peering_bits_meshes;
 	bool terrain_bits_meshes_dirty = true;
+
+	LocalVector<RBMap<TileSet::TerrainsPattern, RBSet<TileMapCell>>> per_terrain_pattern_tiles; // Cached data.
+	bool terrains_cache_dirty = true;
+	void _update_terrains_cache();
 
 	// Navigation
 	struct NavigationLayer {
@@ -315,10 +360,10 @@ private:
 		Variant::Type type = Variant::NIL;
 	};
 	Vector<CustomDataLayer> custom_data_layers;
-	Map<String, int> custom_data_layers_by_name;
+	HashMap<String, int> custom_data_layers_by_name;
 
 	// Per Atlas source data.
-	Map<int, Ref<TileSetSource>> sources;
+	HashMap<int, Ref<TileSetSource>> sources;
 	Vector<int> source_ids;
 	int next_source_id = 0;
 	// ---------------------
@@ -329,22 +374,25 @@ private:
 	void _source_changed();
 
 	// Tile proxies
-	Map<int, int> source_level_proxies;
-	Map<Array, Array> coords_level_proxies;
-	Map<Array, Array> alternative_level_proxies;
+	RBMap<int, int> source_level_proxies;
+	RBMap<Array, Array> coords_level_proxies;
+	RBMap<Array, Array> alternative_level_proxies;
 
 	// Helpers
-	Vector<Point2> _get_square_corner_or_side_terrain_bit_polygon(Vector2i p_size, TileSet::CellNeighbor p_bit);
-	Vector<Point2> _get_square_corner_terrain_bit_polygon(Vector2i p_size, TileSet::CellNeighbor p_bit);
-	Vector<Point2> _get_square_side_terrain_bit_polygon(Vector2i p_size, TileSet::CellNeighbor p_bit);
+	Vector<Point2> _get_square_terrain_polygon(Vector2i p_size);
+	Vector<Point2> _get_square_corner_or_side_terrain_peering_bit_polygon(Vector2i p_size, TileSet::CellNeighbor p_bit);
+	Vector<Point2> _get_square_corner_terrain_peering_bit_polygon(Vector2i p_size, TileSet::CellNeighbor p_bit);
+	Vector<Point2> _get_square_side_terrain_peering_bit_polygon(Vector2i p_size, TileSet::CellNeighbor p_bit);
 
-	Vector<Point2> _get_isometric_corner_or_side_terrain_bit_polygon(Vector2i p_size, TileSet::CellNeighbor p_bit);
-	Vector<Point2> _get_isometric_corner_terrain_bit_polygon(Vector2i p_size, TileSet::CellNeighbor p_bit);
-	Vector<Point2> _get_isometric_side_terrain_bit_polygon(Vector2i p_size, TileSet::CellNeighbor p_bit);
+	Vector<Point2> _get_isometric_terrain_polygon(Vector2i p_size);
+	Vector<Point2> _get_isometric_corner_or_side_terrain_peering_bit_polygon(Vector2i p_size, TileSet::CellNeighbor p_bit);
+	Vector<Point2> _get_isometric_corner_terrain_peering_bit_polygon(Vector2i p_size, TileSet::CellNeighbor p_bit);
+	Vector<Point2> _get_isometric_side_terrain_peering_bit_polygon(Vector2i p_size, TileSet::CellNeighbor p_bit);
 
-	Vector<Point2> _get_half_offset_corner_or_side_terrain_bit_polygon(Vector2i p_size, TileSet::CellNeighbor p_bit, float p_overlap, TileSet::TileOffsetAxis p_offset_axis);
-	Vector<Point2> _get_half_offset_corner_terrain_bit_polygon(Vector2i p_size, TileSet::CellNeighbor p_bit, float p_overlap, TileSet::TileOffsetAxis p_offset_axis);
-	Vector<Point2> _get_half_offset_side_terrain_bit_polygon(Vector2i p_size, TileSet::CellNeighbor p_bit, float p_overlap, TileSet::TileOffsetAxis p_offset_axis);
+	Vector<Point2> _get_half_offset_terrain_polygon(Vector2i p_size, float p_overlap, TileSet::TileOffsetAxis p_offset_axis);
+	Vector<Point2> _get_half_offset_corner_or_side_terrain_peering_bit_polygon(Vector2i p_size, float p_overlap, TileSet::TileOffsetAxis p_offset_axis, TileSet::CellNeighbor p_bit);
+	Vector<Point2> _get_half_offset_corner_terrain_peering_bit_polygon(Vector2i p_size, float p_overlap, TileSet::TileOffsetAxis p_offset_axis, TileSet::CellNeighbor p_bit);
+	Vector<Point2> _get_half_offset_side_terrain_peering_bit_polygon(Vector2i p_size, float p_overlap, TileSet::TileOffsetAxis p_offset_axis, TileSet::CellNeighbor p_bit);
 
 protected:
 	static void _bind_methods();
@@ -417,8 +465,8 @@ public:
 	String get_terrain_name(int p_terrain_set, int p_terrain_index) const;
 	void set_terrain_color(int p_terrain_set, int p_terrain_index, Color p_color);
 	Color get_terrain_color(int p_terrain_set, int p_terrain_index) const;
-	bool is_valid_peering_bit_for_mode(TileSet::TerrainMode p_terrain_mode, TileSet::CellNeighbor p_peering_bit) const;
-	bool is_valid_peering_bit_terrain(int p_terrain_set, TileSet::CellNeighbor p_peering_bit) const;
+	bool is_valid_terrain_peering_bit_for_mode(TileSet::TerrainMode p_terrain_mode, TileSet::CellNeighbor p_peering_bit) const;
+	bool is_valid_terrain_peering_bit(int p_terrain_set, TileSet::CellNeighbor p_peering_bit) const;
 
 	// Navigation
 	int get_navigation_layers_count() const;
@@ -427,6 +475,8 @@ public:
 	void remove_navigation_layer(int p_index);
 	void set_navigation_layer_layers(int p_layer_index, uint32_t p_layers);
 	uint32_t get_navigation_layer_layers(int p_layer_index) const;
+	void set_navigation_layer_layer_value(int p_layer_index, int p_layer_number, bool p_value);
+	bool get_navigation_layer_layer_value(int p_layer_index, int p_layer_number) const;
 
 	// Custom data
 	int get_custom_data_layers_count() const;
@@ -434,10 +484,10 @@ public:
 	void move_custom_data_layer(int p_from_index, int p_to_pos);
 	void remove_custom_data_layer(int p_index);
 	int get_custom_data_layer_by_name(String p_value) const;
-	void set_custom_data_name(int p_layer_id, String p_value);
-	String get_custom_data_name(int p_layer_id) const;
-	void set_custom_data_type(int p_layer_id, Variant::Type p_value);
-	Variant::Type get_custom_data_type(int p_layer_id) const;
+	void set_custom_data_layer_name(int p_layer_id, String p_value);
+	String get_custom_data_layer_name(int p_layer_id) const;
+	void set_custom_data_layer_type(int p_layer_id, Variant::Type p_value);
+	Variant::Type get_custom_data_layer_type(int p_layer_id) const;
 
 	// Tiles proxies.
 	void set_source_level_tile_proxy(int p_source_from, int p_source_to);
@@ -470,11 +520,17 @@ public:
 	void remove_pattern(int p_index);
 	int get_patterns_count();
 
+	// Terrains.
+	RBSet<TerrainsPattern> get_terrains_pattern_set(int p_terrain_set);
+	RBSet<TileMapCell> get_tiles_for_terrains_pattern(int p_terrain_set, TerrainsPattern p_terrain_tile_pattern);
+	TileMapCell get_random_tile_from_terrains_pattern(int p_terrain_set, TerrainsPattern p_terrain_tile_pattern);
+
 	// Helpers
 	Vector<Vector2> get_tile_shape_polygon();
 	void draw_tile_shape(CanvasItem *p_canvas_item, Transform2D p_transform, Color p_color, bool p_filled = false, Ref<Texture2D> p_texture = Ref<Texture2D>());
 
-	Vector<Point2> get_terrain_bit_polygon(int p_terrain_set, TileSet::CellNeighbor p_bit);
+	Vector<Point2> get_terrain_polygon(int p_terrain_set);
+	Vector<Point2> get_terrain_peering_bit_polygon(int p_terrain_set, TileSet::CellNeighbor p_bit);
 	void draw_terrains(CanvasItem *p_canvas_item, Transform2D p_transform, const TileData *p_tile_data);
 	Vector<Vector<Ref<Texture2D>>> generate_terrains_icons(Size2i p_size);
 
@@ -518,7 +574,7 @@ public:
 	virtual void add_custom_data_layer(int p_index){};
 	virtual void move_custom_data_layer(int p_from_index, int p_to_pos){};
 	virtual void remove_custom_data_layer(int p_index){};
-	virtual void reset_state() override{};
+	virtual void reset_state() override;
 
 	// Tiles.
 	virtual int get_tiles_count() const = 0;
@@ -546,7 +602,7 @@ private:
 		LocalVector<real_t> animation_frames_durations;
 
 		// Alternatives
-		Map<int, TileData *> alternatives;
+		HashMap<int, TileData *> alternatives;
 		Vector<int> alternatives_ids;
 		int next_alternative_id = 1;
 	};
@@ -556,9 +612,9 @@ private:
 	Vector2i separation;
 	Size2i texture_region_size = Size2i(16, 16);
 
-	Map<Vector2i, TileAlternativesData> tiles;
+	HashMap<Vector2i, TileAlternativesData> tiles;
 	Vector<Vector2i> tiles_ids;
-	Map<Vector2i, Vector2i> _coords_mapping_cache; // Maps any coordinate to the including tile
+	HashMap<Vector2i, Vector2i> _coords_mapping_cache; // Maps any coordinate to the including tile
 
 	TileData *_get_atlas_tile_data(Vector2i p_atlas_coords, int p_alternative_tile);
 	const TileData *_get_atlas_tile_data(Vector2i p_atlas_coords, int p_alternative_tile) const;
@@ -570,6 +626,12 @@ private:
 
 	void _clear_tiles_outside_texture();
 
+	bool use_texture_padding = true;
+	Ref<ImageTexture> padded_texture;
+	bool padded_texture_needs_update = false;
+	void _queue_update_padded_texture();
+	void _update_padded_texture();
+
 protected:
 	bool _set(const StringName &p_name, const Variant &p_value);
 	bool _get(const StringName &p_name, Variant &r_ret) const;
@@ -580,6 +642,7 @@ protected:
 public:
 	// Not exposed.
 	virtual void set_tile_set(const TileSet *p_tile_set) override;
+	const TileSet *get_tile_set() const;
 	virtual void notify_tile_data_properties_should_change() override;
 	virtual void add_occlusion_layer(int p_index) override;
 	virtual void move_occlusion_layer(int p_from_index, int p_to_pos) override;
@@ -610,6 +673,10 @@ public:
 	Vector2i get_separation() const;
 	void set_texture_region_size(Vector2i p_tile_size);
 	Vector2i get_texture_region_size() const;
+
+	// Padding.
+	void set_use_texture_padding(bool p_use_padding);
+	bool get_use_texture_padding() const;
 
 	// Base tiles.
 	void create_tile(const Vector2i p_atlas_coords, const Vector2i p_size = Vector2i(1, 1));
@@ -649,12 +716,16 @@ public:
 	virtual int get_alternative_tile_id(const Vector2i p_atlas_coords, int p_index) const override;
 
 	// Get data associated to a tile.
-	Object *get_tile_data(const Vector2i p_atlas_coords, int p_alternative_tile) const;
+	TileData *get_tile_data(const Vector2i p_atlas_coords, int p_alternative_tile) const;
 
 	// Helpers.
 	Vector2i get_atlas_grid_size() const;
 	Rect2i get_tile_texture_region(Vector2i p_atlas_coords, int p_frame = 0) const;
-	Vector2i get_tile_effective_texture_offset(Vector2i p_atlas_coords, int p_alternative_tile) const;
+	bool is_position_in_tile_texture_region(const Vector2i p_atlas_coords, int p_alternative_tile, Vector2 p_position) const;
+
+	// Getters for texture and tile region (padded or not)
+	Ref<Texture2D> get_runtime_texture() const;
+	Rect2i get_runtime_tile_texture_region(Vector2i p_atlas_coords, int p_frame = 0) const;
 
 	~TileSetAtlasSource();
 };
@@ -668,7 +739,7 @@ private:
 		bool display_placeholder = false;
 	};
 	Vector<int> scenes_ids;
-	Map<int, SceneData> scenes;
+	HashMap<int, SceneData> scenes;
 	int next_scene_id = 1;
 
 	void _compute_next_alternative_id();
@@ -716,8 +787,8 @@ private:
 	bool flip_h = false;
 	bool flip_v = false;
 	bool transpose = false;
-	Vector2i tex_offset = Vector2i();
-	Ref<ShaderMaterial> material = Ref<ShaderMaterial>();
+	Vector2i texture_origin;
+	Ref<Material> material = Ref<Material>();
 	Color modulate = Color(1.0, 1.0, 1.0, 1.0);
 	int z_index = 0;
 	int y_sort_origin = 0;
@@ -733,7 +804,7 @@ private:
 		};
 
 		Vector2 linear_velocity;
-		float angular_velocity = 0.0;
+		double angular_velocity = 0.0;
 		Vector<PolygonShapeTileData> polygons;
 	};
 	Vector<PhysicsLayerTileData> physics;
@@ -741,6 +812,7 @@ private:
 
 	// Terrain
 	int terrain_set = -1;
+	int terrain = -1;
 	int terrain_peering_bits[16] = { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
 
 	// Navigation
@@ -780,9 +852,11 @@ public:
 	void add_custom_data_layer(int p_index);
 	void move_custom_data_layer(int p_from_index, int p_to_pos);
 	void remove_custom_data_layer(int p_index);
-	void reset_state();
 	void set_allow_transform(bool p_allow_transform);
 	bool is_allowing_transform() const;
+
+	// To duplicate a TileData object, needed for runtiume update.
+	TileData *duplicate();
 
 	// Rendering
 	void set_flip_h(bool p_flip_h);
@@ -792,10 +866,10 @@ public:
 	void set_transpose(bool p_transpose);
 	bool get_transpose() const;
 
-	void set_texture_offset(Vector2i p_texture_offset);
-	Vector2i get_texture_offset() const;
-	void set_material(Ref<ShaderMaterial> p_material);
-	Ref<ShaderMaterial> get_material() const;
+	void set_texture_origin(Vector2i p_texture_origin);
+	Vector2i get_texture_origin() const;
+	void set_material(Ref<Material> p_material);
+	Ref<Material> get_material() const;
 	void set_modulate(Color p_modulate);
 	Color get_modulate() const;
 	void set_z_index(int p_z_index);
@@ -827,9 +901,13 @@ public:
 	// Terrain
 	void set_terrain_set(int p_terrain_id);
 	int get_terrain_set() const;
-	void set_peering_bit_terrain(TileSet::CellNeighbor p_peering_bit, int p_terrain_id);
-	int get_peering_bit_terrain(TileSet::CellNeighbor p_peering_bit) const;
-	bool is_valid_peering_bit_terrain(TileSet::CellNeighbor p_peering_bit) const;
+	void set_terrain(int p_terrain_id);
+	int get_terrain() const;
+	void set_terrain_peering_bit(TileSet::CellNeighbor p_peering_bit, int p_terrain_id);
+	int get_terrain_peering_bit(TileSet::CellNeighbor p_peering_bit) const;
+	bool is_valid_terrain_peering_bit(TileSet::CellNeighbor p_peering_bit) const;
+
+	TileSet::TerrainsPattern get_terrains_pattern() const; // Not exposed.
 
 	// Navigation
 	void set_navigation_polygon(int p_layer_id, Ref<NavigationPolygon> p_navigation_polygon);

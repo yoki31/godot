@@ -1,32 +1,32 @@
-/*************************************************************************/
-/*  godot_joints_2d.cpp                                                  */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  godot_joints_2d.cpp                                                   */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #include "godot_joints_2d.h"
 
@@ -118,22 +118,26 @@ bool GodotPinJoint2D::setup(real_t p_step) {
 	K1[0].y = 0.0f;
 	K1[1].y = A->get_inv_mass() + B_inv_mass;
 
+	Vector2 r1 = rA - A->get_center_of_mass();
+
 	Transform2D K2;
-	K2[0].x = A->get_inv_inertia() * rA.y * rA.y;
-	K2[1].x = -A->get_inv_inertia() * rA.x * rA.y;
-	K2[0].y = -A->get_inv_inertia() * rA.x * rA.y;
-	K2[1].y = A->get_inv_inertia() * rA.x * rA.x;
+	K2[0].x = A->get_inv_inertia() * r1.y * r1.y;
+	K2[1].x = -A->get_inv_inertia() * r1.x * r1.y;
+	K2[0].y = -A->get_inv_inertia() * r1.x * r1.y;
+	K2[1].y = A->get_inv_inertia() * r1.x * r1.x;
 
 	Transform2D K;
 	K[0] = K1[0] + K2[0];
 	K[1] = K1[1] + K2[1];
 
 	if (B) {
+		Vector2 r2 = rB - B->get_center_of_mass();
+
 		Transform2D K3;
-		K3[0].x = B->get_inv_inertia() * rB.y * rB.y;
-		K3[1].x = -B->get_inv_inertia() * rB.x * rB.y;
-		K3[0].y = -B->get_inv_inertia() * rB.x * rB.y;
-		K3[1].y = B->get_inv_inertia() * rB.x * rB.x;
+		K3[0].x = B->get_inv_inertia() * r2.y * r2.y;
+		K3[1].x = -B->get_inv_inertia() * r2.x * r2.y;
+		K3[0].y = -B->get_inv_inertia() * r2.x * r2.y;
+		K3[1].y = B->get_inv_inertia() * r2.x * r2.x;
 
 		K[0] += K3[0];
 		K[1] += K3[1];
@@ -432,13 +436,13 @@ void GodotDampedSpringJoint2D::solve(real_t p_step) {
 	// not 100% certain this is derived correctly, though it makes sense
 	real_t v_damp = -vrn * v_coef;
 	target_vrn = vrn + v_damp;
-	Vector2 j = n * v_damp * n_mass;
+	Vector2 j_new = n * v_damp * n_mass;
 
 	if (dynamic_A) {
-		A->apply_impulse(-j, rA);
+		A->apply_impulse(-j_new, rA);
 	}
 	if (dynamic_B) {
-		B->apply_impulse(j, rB);
+		B->apply_impulse(j_new, rB);
 	}
 }
 

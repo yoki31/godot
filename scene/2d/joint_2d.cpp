@@ -1,32 +1,32 @@
-/*************************************************************************/
-/*  joint_2d.cpp                                                         */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  joint_2d.cpp                                                          */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #include "joint_2d.h"
 
@@ -50,6 +50,7 @@ void Joint2D::_disconnect_signals() {
 void Joint2D::_body_exit_tree() {
 	_disconnect_signals();
 	_update_joint(true);
+	update_configuration_warnings();
 }
 
 void Joint2D::_update_joint(bool p_only_free) {
@@ -64,7 +65,6 @@ void Joint2D::_update_joint(bool p_only_free) {
 	if (p_only_free || !is_inside_tree()) {
 		PhysicsServer2D::get_singleton()->joint_clear(joint);
 		warning = String();
-		update_configuration_warnings();
 		return;
 	}
 
@@ -77,15 +77,15 @@ void Joint2D::_update_joint(bool p_only_free) {
 	bool valid = false;
 
 	if (node_a && !body_a && node_b && !body_b) {
-		warning = TTR("Node A and Node B must be PhysicsBody2Ds");
+		warning = RTR("Node A and Node B must be PhysicsBody2Ds");
 	} else if (node_a && !body_a) {
-		warning = TTR("Node A must be a PhysicsBody2D");
+		warning = RTR("Node A must be a PhysicsBody2D");
 	} else if (node_b && !body_b) {
-		warning = TTR("Node B must be a PhysicsBody2D");
+		warning = RTR("Node B must be a PhysicsBody2D");
 	} else if (!body_a || !body_b) {
-		warning = TTR("Joint is not connected to two PhysicsBody2Ds");
+		warning = RTR("Joint is not connected to two PhysicsBody2Ds");
 	} else if (body_a == body_b) {
-		warning = TTR("Node A and Node B must be different PhysicsBody2Ds");
+		warning = RTR("Node A and Node B must be different PhysicsBody2Ds");
 	} else {
 		warning = String();
 		valid = true;
@@ -112,7 +112,7 @@ void Joint2D::_update_joint(bool p_only_free) {
 
 	ERR_FAIL_COND_MSG(!joint.is_valid(), "Failed to configure the joint.");
 
-	PhysicsServer2D::get_singleton()->get_singleton()->joint_set_param(joint, PhysicsServer2D::JOINT_PARAM_BIAS, bias);
+	PhysicsServer2D::get_singleton()->joint_set_param(joint, PhysicsServer2D::JOINT_PARAM_BIAS, bias);
 
 	ba = body_a->get_rid();
 	bb = body_b->get_rid();
@@ -128,12 +128,18 @@ void Joint2D::set_node_a(const NodePath &p_node_a) {
 		return;
 	}
 
-	if (joint.is_valid()) {
+	if (is_configured()) {
 		_disconnect_signals();
 	}
 
 	a = p_node_a;
-	_update_joint();
+	if (Engine::get_singleton()->is_editor_hint()) {
+		// When in editor, the setter may be called as a result of node rename.
+		// It happens before the node actually changes its name, which triggers false warning.
+		callable_mp(this, &Joint2D::_update_joint).call_deferred();
+	} else {
+		_update_joint();
+	}
 }
 
 NodePath Joint2D::get_node_a() const {
@@ -145,12 +151,16 @@ void Joint2D::set_node_b(const NodePath &p_node_b) {
 		return;
 	}
 
-	if (joint.is_valid()) {
+	if (is_configured()) {
 		_disconnect_signals();
 	}
 
 	b = p_node_b;
-	_update_joint();
+	if (Engine::get_singleton()->is_editor_hint()) {
+		callable_mp(this, &Joint2D::_update_joint).call_deferred();
+	} else {
+		_update_joint();
+	}
 }
 
 NodePath Joint2D::get_node_b() const {
@@ -159,14 +169,18 @@ NodePath Joint2D::get_node_b() const {
 
 void Joint2D::_notification(int p_what) {
 	switch (p_what) {
-		case NOTIFICATION_READY: {
+		case NOTIFICATION_POST_ENTER_TREE: {
+			if (is_configured()) {
+				_disconnect_signals();
+			}
 			_update_joint();
 		} break;
+
 		case NOTIFICATION_EXIT_TREE: {
-			if (joint.is_valid()) {
+			if (is_configured()) {
 				_disconnect_signals();
-				_update_joint(true);
 			}
+			_update_joint(true);
 		} break;
 	}
 }
@@ -174,7 +188,7 @@ void Joint2D::_notification(int p_what) {
 void Joint2D::set_bias(real_t p_bias) {
 	bias = p_bias;
 	if (joint.is_valid()) {
-		PhysicsServer2D::get_singleton()->get_singleton()->joint_set_param(joint, PhysicsServer2D::JOINT_PARAM_BIAS, bias);
+		PhysicsServer2D::get_singleton()->joint_set_param(joint, PhysicsServer2D::JOINT_PARAM_BIAS, bias);
 	}
 }
 
@@ -186,7 +200,9 @@ void Joint2D::set_exclude_nodes_from_collision(bool p_enable) {
 	if (exclude_from_collision == p_enable) {
 		return;
 	}
-
+	if (is_configured()) {
+		_disconnect_signals();
+	}
 	_update_joint(true);
 	exclude_from_collision = p_enable;
 	_update_joint();
@@ -196,8 +212,8 @@ bool Joint2D::get_exclude_nodes_from_collision() const {
 	return exclude_from_collision;
 }
 
-TypedArray<String> Joint2D::get_configuration_warnings() const {
-	TypedArray<String> warnings = Node2D::get_configuration_warnings();
+PackedStringArray Joint2D::get_configuration_warnings() const {
+	PackedStringArray warnings = Node2D::get_configuration_warnings();
 
 	if (!warning.is_empty()) {
 		warnings.push_back(warning);
@@ -227,9 +243,11 @@ void Joint2D::_bind_methods() {
 
 Joint2D::Joint2D() {
 	joint = PhysicsServer2D::get_singleton()->joint_create();
+	set_hide_clip_children(true);
 }
 
 Joint2D::~Joint2D() {
+	ERR_FAIL_NULL(PhysicsServer2D::get_singleton());
 	PhysicsServer2D::get_singleton()->free(joint);
 }
 
@@ -261,7 +279,7 @@ void PinJoint2D::_configure_joint(RID p_joint, PhysicsBody2D *body_a, PhysicsBod
 
 void PinJoint2D::set_softness(real_t p_softness) {
 	softness = p_softness;
-	update();
+	queue_redraw();
 	if (is_configured()) {
 		PhysicsServer2D::get_singleton()->pin_joint_set_param(get_joint(), PhysicsServer2D::PIN_JOINT_SOFTNESS, p_softness);
 	}
@@ -315,7 +333,7 @@ void GrooveJoint2D::_configure_joint(RID p_joint, PhysicsBody2D *body_a, Physics
 
 void GrooveJoint2D::set_length(real_t p_length) {
 	length = p_length;
-	update();
+	queue_redraw();
 }
 
 real_t GrooveJoint2D::get_length() const {
@@ -324,7 +342,7 @@ real_t GrooveJoint2D::get_length() const {
 
 void GrooveJoint2D::set_initial_offset(real_t p_initial_offset) {
 	initial_offset = p_initial_offset;
-	update();
+	queue_redraw();
 }
 
 real_t GrooveJoint2D::get_initial_offset() const {
@@ -337,8 +355,8 @@ void GrooveJoint2D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_initial_offset", "offset"), &GrooveJoint2D::set_initial_offset);
 	ClassDB::bind_method(D_METHOD("get_initial_offset"), &GrooveJoint2D::get_initial_offset);
 
-	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "length", PROPERTY_HINT_RANGE, "1,65535,1,exp"), "set_length", "get_length");
-	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "initial_offset", PROPERTY_HINT_RANGE, "1,65535,1,exp"), "set_initial_offset", "get_initial_offset");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "length", PROPERTY_HINT_RANGE, "1,65535,1,exp,suffix:px"), "set_length", "get_length");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "initial_offset", PROPERTY_HINT_RANGE, "1,65535,1,exp,suffix:px"), "set_initial_offset", "get_initial_offset");
 }
 
 GrooveJoint2D::GrooveJoint2D() {
@@ -381,7 +399,7 @@ void DampedSpringJoint2D::_configure_joint(RID p_joint, PhysicsBody2D *body_a, P
 
 void DampedSpringJoint2D::set_length(real_t p_length) {
 	length = p_length;
-	update();
+	queue_redraw();
 }
 
 real_t DampedSpringJoint2D::get_length() const {
@@ -390,7 +408,7 @@ real_t DampedSpringJoint2D::get_length() const {
 
 void DampedSpringJoint2D::set_rest_length(real_t p_rest_length) {
 	rest_length = p_rest_length;
-	update();
+	queue_redraw();
 	if (is_configured()) {
 		PhysicsServer2D::get_singleton()->damped_spring_joint_set_param(get_joint(), PhysicsServer2D::DAMPED_SPRING_REST_LENGTH, p_rest_length ? p_rest_length : length);
 	}
@@ -402,7 +420,7 @@ real_t DampedSpringJoint2D::get_rest_length() const {
 
 void DampedSpringJoint2D::set_stiffness(real_t p_stiffness) {
 	stiffness = p_stiffness;
-	update();
+	queue_redraw();
 	if (is_configured()) {
 		PhysicsServer2D::get_singleton()->damped_spring_joint_set_param(get_joint(), PhysicsServer2D::DAMPED_SPRING_STIFFNESS, p_stiffness);
 	}
@@ -414,7 +432,7 @@ real_t DampedSpringJoint2D::get_stiffness() const {
 
 void DampedSpringJoint2D::set_damping(real_t p_damping) {
 	damping = p_damping;
-	update();
+	queue_redraw();
 	if (is_configured()) {
 		PhysicsServer2D::get_singleton()->damped_spring_joint_set_param(get_joint(), PhysicsServer2D::DAMPED_SPRING_DAMPING, p_damping);
 	}
@@ -434,8 +452,8 @@ void DampedSpringJoint2D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_damping", "damping"), &DampedSpringJoint2D::set_damping);
 	ClassDB::bind_method(D_METHOD("get_damping"), &DampedSpringJoint2D::get_damping);
 
-	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "length", PROPERTY_HINT_RANGE, "1,65535,1,exp"), "set_length", "get_length");
-	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "rest_length", PROPERTY_HINT_RANGE, "0,65535,1,exp"), "set_rest_length", "get_rest_length");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "length", PROPERTY_HINT_RANGE, "1,65535,1,exp,suffix:px"), "set_length", "get_length");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "rest_length", PROPERTY_HINT_RANGE, "0,65535,1,exp,suffix:px"), "set_rest_length", "get_rest_length");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "stiffness", PROPERTY_HINT_RANGE, "0.1,64,0.1,exp"), "set_stiffness", "get_stiffness");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "damping", PROPERTY_HINT_RANGE, "0.01,16,0.01,exp"), "set_damping", "get_damping");
 }

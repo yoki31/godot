@@ -1,32 +1,32 @@
-/*************************************************************************/
-/*  godot_cone_twist_joint_3d.cpp                                        */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  godot_cone_twist_joint_3d.cpp                                         */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 /*
 Adapted to Godot from the Bullet library.
@@ -129,24 +129,26 @@ bool GodotConeTwistJoint3D::setup(real_t p_timestep) {
 		plane_space(normal[0], normal[1], normal[2]);
 
 		for (int i = 0; i < 3; i++) {
-			memnew_placement(&m_jac[i], GodotJacobianEntry3D(
-												A->get_principal_inertia_axes().transposed(),
-												B->get_principal_inertia_axes().transposed(),
-												pivotAInW - A->get_transform().origin - A->get_center_of_mass(),
-												pivotBInW - B->get_transform().origin - B->get_center_of_mass(),
-												normal[i],
-												A->get_inv_inertia(),
-												A->get_inv_mass(),
-												B->get_inv_inertia(),
-												B->get_inv_mass()));
+			memnew_placement(
+					&m_jac[i],
+					GodotJacobianEntry3D(
+							A->get_principal_inertia_axes().transposed(),
+							B->get_principal_inertia_axes().transposed(),
+							pivotAInW - A->get_transform().origin - A->get_center_of_mass(),
+							pivotBInW - B->get_transform().origin - B->get_center_of_mass(),
+							normal[i],
+							A->get_inv_inertia(),
+							A->get_inv_mass(),
+							B->get_inv_inertia(),
+							B->get_inv_mass()));
 		}
 	}
 
 	Vector3 b1Axis1, b1Axis2, b1Axis3;
 	Vector3 b2Axis1, b2Axis2;
 
-	b1Axis1 = A->get_transform().basis.xform(this->m_rbAFrame.basis.get_axis(0));
-	b2Axis1 = B->get_transform().basis.xform(this->m_rbBFrame.basis.get_axis(0));
+	b1Axis1 = A->get_transform().basis.xform(this->m_rbAFrame.basis.get_column(0));
+	b2Axis1 = B->get_transform().basis.xform(this->m_rbBFrame.basis.get_column(0));
 
 	real_t swing1 = real_t(0.), swing2 = real_t(0.);
 
@@ -156,7 +158,7 @@ bool GodotConeTwistJoint3D::setup(real_t p_timestep) {
 
 	// Get Frame into world space
 	if (m_swingSpan1 >= real_t(0.05f)) {
-		b1Axis2 = A->get_transform().basis.xform(this->m_rbAFrame.basis.get_axis(1));
+		b1Axis2 = A->get_transform().basis.xform(this->m_rbAFrame.basis.get_column(1));
 		//swing1  = btAtan2Fast( b2Axis1.dot(b1Axis2),b2Axis1.dot(b1Axis1) );
 		swx = b2Axis1.dot(b1Axis1);
 		swy = b2Axis1.dot(b1Axis2);
@@ -167,7 +169,7 @@ bool GodotConeTwistJoint3D::setup(real_t p_timestep) {
 	}
 
 	if (m_swingSpan2 >= real_t(0.05f)) {
-		b1Axis3 = A->get_transform().basis.xform(this->m_rbAFrame.basis.get_axis(2));
+		b1Axis3 = A->get_transform().basis.xform(this->m_rbAFrame.basis.get_column(2));
 		//swing2 = btAtan2Fast( b2Axis1.dot(b1Axis3),b2Axis1.dot(b1Axis1) );
 		swx = b2Axis1.dot(b1Axis1);
 		swy = b2Axis1.dot(b1Axis3);
@@ -192,13 +194,12 @@ bool GodotConeTwistJoint3D::setup(real_t p_timestep) {
 		real_t swingAxisSign = (b2Axis1.dot(b1Axis1) >= 0.0f) ? 1.0f : -1.0f;
 		m_swingAxis *= swingAxisSign;
 
-		m_kSwing = real_t(1.) / (A->compute_angular_impulse_denominator(m_swingAxis) +
-										B->compute_angular_impulse_denominator(m_swingAxis));
+		m_kSwing = real_t(1.) / (A->compute_angular_impulse_denominator(m_swingAxis) + B->compute_angular_impulse_denominator(m_swingAxis));
 	}
 
 	// Twist limits
 	if (m_twistSpan >= real_t(0.)) {
-		Vector3 b2Axis22 = B->get_transform().basis.xform(this->m_rbBFrame.basis.get_axis(1));
+		Vector3 b2Axis22 = B->get_transform().basis.xform(this->m_rbBFrame.basis.get_column(1));
 		Quaternion rotationArc = Quaternion(b2Axis1, b1Axis1);
 		Vector3 TwistRef = rotationArc.xform(b2Axis22);
 		real_t twist = atan2fast(TwistRef.dot(b1Axis3), TwistRef.dot(b1Axis2));
@@ -212,8 +213,7 @@ bool GodotConeTwistJoint3D::setup(real_t p_timestep) {
 			m_twistAxis.normalize();
 			m_twistAxis *= -1.0f;
 
-			m_kTwist = real_t(1.) / (A->compute_angular_impulse_denominator(m_twistAxis) +
-											B->compute_angular_impulse_denominator(m_twistAxis));
+			m_kTwist = real_t(1.) / (A->compute_angular_impulse_denominator(m_twistAxis) + B->compute_angular_impulse_denominator(m_twistAxis));
 
 		} else if (twist > m_twistSpan * lockedFreeFactor) {
 			m_twistCorrection = (twist - m_twistSpan);
@@ -222,8 +222,7 @@ bool GodotConeTwistJoint3D::setup(real_t p_timestep) {
 			m_twistAxis = (b2Axis1 + b1Axis1) * 0.5f;
 			m_twistAxis.normalize();
 
-			m_kTwist = real_t(1.) / (A->compute_angular_impulse_denominator(m_twistAxis) +
-											B->compute_angular_impulse_denominator(m_twistAxis));
+			m_kTwist = real_t(1.) / (A->compute_angular_impulse_denominator(m_twistAxis) + B->compute_angular_impulse_denominator(m_twistAxis));
 		}
 	}
 

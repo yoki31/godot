@@ -1,32 +1,32 @@
-/*************************************************************************/
-/*  godot_area_2d.cpp                                                    */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  godot_area_2d.cpp                                                     */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #include "godot_area_2d.h"
 #include "godot_body_2d.h"
@@ -77,16 +77,17 @@ void GodotArea2D::set_space(GodotSpace2D *p_space) {
 	_set_space(p_space);
 }
 
-void GodotArea2D::set_monitor_callback(ObjectID p_id, const StringName &p_method) {
-	if (p_id == monitor_callback_id) {
-		monitor_callback_method = p_method;
+void GodotArea2D::set_monitor_callback(const Callable &p_callback) {
+	ObjectID id = p_callback.get_object_id();
+
+	if (id == monitor_callback.get_object_id()) {
+		monitor_callback = p_callback;
 		return;
 	}
 
 	_unregister_shapes();
 
-	monitor_callback_id = p_id;
-	monitor_callback_method = p_method;
+	monitor_callback = p_callback;
 
 	monitored_bodies.clear();
 	monitored_areas.clear();
@@ -98,16 +99,17 @@ void GodotArea2D::set_monitor_callback(ObjectID p_id, const StringName &p_method
 	}
 }
 
-void GodotArea2D::set_area_monitor_callback(ObjectID p_id, const StringName &p_method) {
-	if (p_id == area_monitor_callback_id) {
-		area_monitor_callback_method = p_method;
+void GodotArea2D::set_area_monitor_callback(const Callable &p_callback) {
+	ObjectID id = p_callback.get_object_id();
+
+	if (id == area_monitor_callback.get_object_id()) {
+		area_monitor_callback = p_callback;
 		return;
 	}
 
 	_unregister_shapes();
 
-	area_monitor_callback_id = p_id;
-	area_monitor_callback_method = p_method;
+	area_monitor_callback = p_callback;
 
 	monitored_bodies.clear();
 	monitored_areas.clear();
@@ -119,18 +121,21 @@ void GodotArea2D::set_area_monitor_callback(ObjectID p_id, const StringName &p_m
 	}
 }
 
-void GodotArea2D::set_space_override_mode(PhysicsServer2D::AreaSpaceOverrideMode p_mode) {
-	bool do_override = p_mode != PhysicsServer2D::AREA_SPACE_OVERRIDE_DISABLED;
-	if (do_override == (space_override_mode != PhysicsServer2D::AREA_SPACE_OVERRIDE_DISABLED)) {
+void GodotArea2D::_set_space_override_mode(PhysicsServer2D::AreaSpaceOverrideMode &r_mode, PhysicsServer2D::AreaSpaceOverrideMode p_new_mode) {
+	bool do_override = p_new_mode != PhysicsServer2D::AREA_SPACE_OVERRIDE_DISABLED;
+	if (do_override == (r_mode != PhysicsServer2D::AREA_SPACE_OVERRIDE_DISABLED)) {
 		return;
 	}
 	_unregister_shapes();
-	space_override_mode = p_mode;
+	r_mode = p_new_mode;
 	_shape_changed();
 }
 
 void GodotArea2D::set_param(PhysicsServer2D::AreaParameter p_param, const Variant &p_value) {
 	switch (p_param) {
+		case PhysicsServer2D::AREA_PARAM_GRAVITY_OVERRIDE_MODE:
+			_set_space_override_mode(gravity_override_mode, (PhysicsServer2D::AreaSpaceOverrideMode)(int)p_value);
+			break;
 		case PhysicsServer2D::AREA_PARAM_GRAVITY:
 			gravity = p_value;
 			break;
@@ -140,14 +145,17 @@ void GodotArea2D::set_param(PhysicsServer2D::AreaParameter p_param, const Varian
 		case PhysicsServer2D::AREA_PARAM_GRAVITY_IS_POINT:
 			gravity_is_point = p_value;
 			break;
-		case PhysicsServer2D::AREA_PARAM_GRAVITY_DISTANCE_SCALE:
-			gravity_distance_scale = p_value;
+		case PhysicsServer2D::AREA_PARAM_GRAVITY_POINT_UNIT_DISTANCE:
+			gravity_point_unit_distance = p_value;
 			break;
-		case PhysicsServer2D::AREA_PARAM_GRAVITY_POINT_ATTENUATION:
-			point_attenuation = p_value;
+		case PhysicsServer2D::AREA_PARAM_LINEAR_DAMP_OVERRIDE_MODE:
+			_set_space_override_mode(linear_damping_override_mode, (PhysicsServer2D::AreaSpaceOverrideMode)(int)p_value);
 			break;
 		case PhysicsServer2D::AREA_PARAM_LINEAR_DAMP:
 			linear_damp = p_value;
+			break;
+		case PhysicsServer2D::AREA_PARAM_ANGULAR_DAMP_OVERRIDE_MODE:
+			_set_space_override_mode(angular_damping_override_mode, (PhysicsServer2D::AreaSpaceOverrideMode)(int)p_value);
 			break;
 		case PhysicsServer2D::AREA_PARAM_ANGULAR_DAMP:
 			angular_damp = p_value;
@@ -160,18 +168,22 @@ void GodotArea2D::set_param(PhysicsServer2D::AreaParameter p_param, const Varian
 
 Variant GodotArea2D::get_param(PhysicsServer2D::AreaParameter p_param) const {
 	switch (p_param) {
+		case PhysicsServer2D::AREA_PARAM_GRAVITY_OVERRIDE_MODE:
+			return gravity_override_mode;
 		case PhysicsServer2D::AREA_PARAM_GRAVITY:
 			return gravity;
 		case PhysicsServer2D::AREA_PARAM_GRAVITY_VECTOR:
 			return gravity_vector;
 		case PhysicsServer2D::AREA_PARAM_GRAVITY_IS_POINT:
 			return gravity_is_point;
-		case PhysicsServer2D::AREA_PARAM_GRAVITY_DISTANCE_SCALE:
-			return gravity_distance_scale;
-		case PhysicsServer2D::AREA_PARAM_GRAVITY_POINT_ATTENUATION:
-			return point_attenuation;
+		case PhysicsServer2D::AREA_PARAM_GRAVITY_POINT_UNIT_DISTANCE:
+			return gravity_point_unit_distance;
+		case PhysicsServer2D::AREA_PARAM_LINEAR_DAMP_OVERRIDE_MODE:
+			return linear_damping_override_mode;
 		case PhysicsServer2D::AREA_PARAM_LINEAR_DAMP:
 			return linear_damp;
+		case PhysicsServer2D::AREA_PARAM_ANGULAR_DAMP_OVERRIDE_MODE:
+			return angular_damping_override_mode;
 		case PhysicsServer2D::AREA_PARAM_ANGULAR_DAMP:
 			return angular_damp;
 		case PhysicsServer2D::AREA_PARAM_PRIORITY:
@@ -196,93 +208,104 @@ void GodotArea2D::set_monitorable(bool p_monitorable) {
 
 	monitorable = p_monitorable;
 	_set_static(!monitorable);
+	_shapes_changed();
 }
 
 void GodotArea2D::call_queries() {
-	if (monitor_callback_id.is_valid() && !monitored_bodies.is_empty()) {
-		Variant res[5];
-		Variant *resptr[5];
-		for (int i = 0; i < 5; i++) {
-			resptr[i] = &res[i];
-		}
-
-		Object *obj = ObjectDB::get_instance(monitor_callback_id);
-		if (!obj) {
-			monitored_bodies.clear();
-			monitor_callback_id = ObjectID();
-			return;
-		}
-
-		for (Map<BodyKey, BodyState>::Element *E = monitored_bodies.front(); E;) {
-			if (E->get().state == 0) { // Nothing happened
-				Map<BodyKey, BodyState>::Element *next = E->next();
-				monitored_bodies.erase(E);
-				E = next;
-				continue;
+	if (!monitor_callback.is_null() && !monitored_bodies.is_empty()) {
+		if (monitor_callback.is_valid()) {
+			Variant res[5];
+			Variant *resptr[5];
+			for (int i = 0; i < 5; i++) {
+				resptr[i] = &res[i];
 			}
 
-			res[0] = E->get().state > 0 ? PhysicsServer2D::AREA_BODY_ADDED : PhysicsServer2D::AREA_BODY_REMOVED;
-			res[1] = E->key().rid;
-			res[2] = E->key().instance_id;
-			res[3] = E->key().body_shape;
-			res[4] = E->key().area_shape;
+			for (HashMap<BodyKey, BodyState, BodyKey>::Iterator E = monitored_bodies.begin(); E;) {
+				if (E->value.state == 0) { // Nothing happened
+					HashMap<BodyKey, BodyState, BodyKey>::Iterator next = E;
+					++next;
+					monitored_bodies.remove(E);
+					E = next;
+					continue;
+				}
 
-			Map<BodyKey, BodyState>::Element *next = E->next();
-			monitored_bodies.erase(E);
-			E = next;
+				res[0] = E->value.state > 0 ? PhysicsServer2D::AREA_BODY_ADDED : PhysicsServer2D::AREA_BODY_REMOVED;
+				res[1] = E->key.rid;
+				res[2] = E->key.instance_id;
+				res[3] = E->key.body_shape;
+				res[4] = E->key.area_shape;
 
-			Callable::CallError ce;
-			obj->call(monitor_callback_method, (const Variant **)resptr, 5, ce);
+				HashMap<BodyKey, BodyState, BodyKey>::Iterator next = E;
+				++next;
+				monitored_bodies.remove(E);
+				E = next;
+
+				Callable::CallError ce;
+				Variant ret;
+				monitor_callback.callp((const Variant **)resptr, 5, ret, ce);
+
+				if (ce.error != Callable::CallError::CALL_OK) {
+					ERR_PRINT_ONCE("Error calling event callback method " + Variant::get_callable_error_text(monitor_callback, (const Variant **)resptr, 5, ce));
+				}
+			}
+		} else {
+			monitored_bodies.clear();
+			monitor_callback = Callable();
 		}
 	}
 
-	if (area_monitor_callback_id.is_valid() && !monitored_areas.is_empty()) {
-		Variant res[5];
-		Variant *resptr[5];
-		for (int i = 0; i < 5; i++) {
-			resptr[i] = &res[i];
-		}
-
-		Object *obj = ObjectDB::get_instance(area_monitor_callback_id);
-		if (!obj) {
-			monitored_areas.clear();
-			area_monitor_callback_id = ObjectID();
-			return;
-		}
-
-		for (Map<BodyKey, BodyState>::Element *E = monitored_areas.front(); E;) {
-			if (E->get().state == 0) { // Nothing happened
-				Map<BodyKey, BodyState>::Element *next = E->next();
-				monitored_areas.erase(E);
-				E = next;
-				continue;
+	if (!area_monitor_callback.is_null() && !monitored_areas.is_empty()) {
+		if (area_monitor_callback.is_valid()) {
+			Variant res[5];
+			Variant *resptr[5];
+			for (int i = 0; i < 5; i++) {
+				resptr[i] = &res[i];
 			}
 
-			res[0] = E->get().state > 0 ? PhysicsServer2D::AREA_BODY_ADDED : PhysicsServer2D::AREA_BODY_REMOVED;
-			res[1] = E->key().rid;
-			res[2] = E->key().instance_id;
-			res[3] = E->key().body_shape;
-			res[4] = E->key().area_shape;
+			for (HashMap<BodyKey, BodyState, BodyKey>::Iterator E = monitored_areas.begin(); E;) {
+				if (E->value.state == 0) { // Nothing happened
+					HashMap<BodyKey, BodyState, BodyKey>::Iterator next = E;
+					++next;
+					monitored_areas.remove(E);
+					E = next;
+					continue;
+				}
 
-			Map<BodyKey, BodyState>::Element *next = E->next();
-			monitored_areas.erase(E);
-			E = next;
+				res[0] = E->value.state > 0 ? PhysicsServer2D::AREA_BODY_ADDED : PhysicsServer2D::AREA_BODY_REMOVED;
+				res[1] = E->key.rid;
+				res[2] = E->key.instance_id;
+				res[3] = E->key.body_shape;
+				res[4] = E->key.area_shape;
 
-			Callable::CallError ce;
-			obj->call(area_monitor_callback_method, (const Variant **)resptr, 5, ce);
+				HashMap<BodyKey, BodyState, BodyKey>::Iterator next = E;
+				++next;
+				monitored_areas.remove(E);
+				E = next;
+
+				Callable::CallError ce;
+				Variant ret;
+				area_monitor_callback.callp((const Variant **)resptr, 5, ret, ce);
+
+				if (ce.error != Callable::CallError::CALL_OK) {
+					ERR_PRINT_ONCE("Error calling event callback method " + Variant::get_callable_error_text(area_monitor_callback, (const Variant **)resptr, 5, ce));
+				}
+			}
+		} else {
+			monitored_areas.clear();
+			area_monitor_callback = Callable();
 		}
 	}
 }
 
 void GodotArea2D::compute_gravity(const Vector2 &p_position, Vector2 &r_gravity) const {
 	if (is_gravity_point()) {
-		const real_t gravity_distance_scale = get_gravity_distance_scale();
+		const real_t gr_unit_dist = get_gravity_point_unit_distance();
 		Vector2 v = get_transform().xform(get_gravity_vector()) - p_position;
-		if (gravity_distance_scale > 0) {
-			const real_t v_length = v.length();
-			if (v_length > 0) {
-				const real_t v_scaled = v_length * gravity_distance_scale;
-				r_gravity = (v.normalized() * (get_gravity() / (v_scaled * v_scaled)));
+		if (gr_unit_dist > 0) {
+			const real_t v_length_sq = v.length_squared();
+			if (v_length_sq > 0) {
+				const real_t gravity_strength = get_gravity() * gr_unit_dist * gr_unit_dist / v_length_sq;
+				r_gravity = v.normalized() * gravity_strength;
 			} else {
 				r_gravity = Vector2();
 			}

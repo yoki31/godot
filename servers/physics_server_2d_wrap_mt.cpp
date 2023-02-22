@@ -1,32 +1,32 @@
-/*************************************************************************/
-/*  physics_server_2d_wrap_mt.cpp                                        */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  physics_server_2d_wrap_mt.cpp                                         */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #include "physics_server_2d_wrap_mt.h"
 
@@ -37,7 +37,7 @@ void PhysicsServer2DWrapMT::thread_exit() {
 }
 
 void PhysicsServer2DWrapMT::thread_step(real_t p_delta) {
-	physics_2d_server->step(p_delta);
+	physics_server_2d->step(p_delta);
 	step_sem.post();
 }
 
@@ -50,7 +50,7 @@ void PhysicsServer2DWrapMT::_thread_callback(void *_instance) {
 void PhysicsServer2DWrapMT::thread_loop() {
 	server_thread = Thread::get_caller_id();
 
-	physics_2d_server->init();
+	physics_server_2d->init();
 
 	exit.clear();
 	step_thread_up.set();
@@ -61,7 +61,7 @@ void PhysicsServer2DWrapMT::thread_loop() {
 
 	command_queue.flush_all(); // flush all
 
-	physics_2d_server->finish();
+	physics_server_2d->finish();
 }
 
 /* EVENT QUEUING */
@@ -71,7 +71,7 @@ void PhysicsServer2DWrapMT::step(real_t p_step) {
 		command_queue.push(this, &PhysicsServer2DWrapMT::thread_step, p_step);
 	} else {
 		command_queue.flush_all(); //flush all pending from other threads
-		physics_2d_server->step(p_step);
+		physics_server_2d->step(p_step);
 	}
 }
 
@@ -83,15 +83,15 @@ void PhysicsServer2DWrapMT::sync() {
 			step_sem.wait(); //must not wait if a step was not issued
 		}
 	}
-	physics_2d_server->sync();
+	physics_server_2d->sync();
 }
 
 void PhysicsServer2DWrapMT::flush_queries() {
-	physics_2d_server->flush_queries();
+	physics_server_2d->flush_queries();
 }
 
 void PhysicsServer2DWrapMT::end_sync() {
-	physics_2d_server->end_sync();
+	physics_server_2d->end_sync();
 }
 
 void PhysicsServer2DWrapMT::init() {
@@ -102,7 +102,7 @@ void PhysicsServer2DWrapMT::init() {
 			OS::get_singleton()->delay_usec(1000);
 		}
 	} else {
-		physics_2d_server->init();
+		physics_server_2d->init();
 	}
 }
 
@@ -111,13 +111,13 @@ void PhysicsServer2DWrapMT::finish() {
 		command_queue.push(this, &PhysicsServer2DWrapMT::thread_exit);
 		thread.wait_to_finish();
 	} else {
-		physics_2d_server->finish();
+		physics_server_2d->finish();
 	}
 }
 
 PhysicsServer2DWrapMT::PhysicsServer2DWrapMT(PhysicsServer2D *p_contained, bool p_create_thread) :
 		command_queue(p_create_thread) {
-	physics_2d_server = p_contained;
+	physics_server_2d = p_contained;
 	create_thread = p_create_thread;
 
 	pool_max_size = GLOBAL_GET("memory/limits/multithreaded_server/rid_pool_prealloc");
@@ -132,6 +132,6 @@ PhysicsServer2DWrapMT::PhysicsServer2DWrapMT(PhysicsServer2D *p_contained, bool 
 }
 
 PhysicsServer2DWrapMT::~PhysicsServer2DWrapMT() {
-	memdelete(physics_2d_server);
+	memdelete(physics_server_2d);
 	//finish();
 }

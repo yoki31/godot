@@ -1,39 +1,40 @@
-/*************************************************************************/
-/*  editor_toaster.cpp                                                   */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
-
-#include "editor/editor_node.h"
-#include "editor/editor_scale.h"
-#include "scene/gui/label.h"
-#include "scene/gui/panel_container.h"
+/**************************************************************************/
+/*  editor_toaster.cpp                                                    */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #include "editor_toaster.h"
+
+#include "editor/editor_scale.h"
+#include "editor/editor_settings.h"
+#include "scene/gui/button.h"
+#include "scene/gui/label.h"
+#include "scene/gui/panel_container.h"
 
 EditorToaster *EditorToaster::singleton = nullptr;
 
@@ -61,7 +62,7 @@ void EditorToaster::_notification(int p_what) {
 					if (toasts[element.key].remaining_time < 0) {
 						close(element.key);
 					}
-					element.key->update();
+					element.key->queue_redraw();
 				}
 			} else {
 				// Reset the timers when hovered.
@@ -70,39 +71,41 @@ void EditorToaster::_notification(int p_what) {
 						continue;
 					}
 					toasts[element.key].remaining_time = element.value.duration;
-					element.key->update();
+					element.key->queue_redraw();
 				}
 			}
 
 			// Change alpha over time.
 			bool needs_update = false;
 			for (const KeyValue<Control *, Toast> &element : toasts) {
-				Color modulate = element.key->get_modulate();
+				Color modulate_fade = element.key->get_modulate();
 
 				// Change alpha over time.
-				if (element.value.popped && modulate.a < 1.0) {
-					modulate.a += delta * 3;
-					element.key->set_modulate(modulate);
-				} else if (!element.value.popped && modulate.a > 0.0) {
-					modulate.a -= delta * 2;
-					element.key->set_modulate(modulate);
+				if (element.value.popped && modulate_fade.a < 1.0) {
+					modulate_fade.a += delta * 3;
+					element.key->set_modulate(modulate_fade);
+				} else if (!element.value.popped && modulate_fade.a > 0.0) {
+					modulate_fade.a -= delta * 2;
+					element.key->set_modulate(modulate_fade);
 				}
 
 				// Hide element if it is not visible anymore.
-				if (modulate.a <= 0) {
-					if (element.key->is_visible()) {
-						element.key->hide();
-						needs_update = true;
-					}
+				if (modulate_fade.a <= 0 && element.key->is_visible()) {
+					element.key->hide();
+					needs_update = true;
+				} else if (modulate_fade.a >= 0 && !element.key->is_visible()) {
+					element.key->show();
+					needs_update = true;
 				}
 			}
 
 			if (needs_update) {
 				_update_vbox_position();
 				_update_disable_notifications_button();
-				main_button->update();
+				main_button->queue_redraw();
 			}
 		} break;
+
 		case NOTIFICATION_ENTER_TREE:
 		case NOTIFICATION_THEME_CHANGED: {
 			if (vbox_container->is_visible()) {
@@ -113,32 +116,31 @@ void EditorToaster::_notification(int p_what) {
 			disable_notifications_button->set_icon(get_theme_icon(SNAME("NotificationDisabled"), SNAME("EditorIcons")));
 
 			// Styleboxes background.
-			info_panel_style_background->set_bg_color(get_theme_color("base_color", "Editor"));
+			info_panel_style_background->set_bg_color(get_theme_color(SNAME("base_color"), SNAME("Editor")));
 
-			warning_panel_style_background->set_bg_color(get_theme_color("base_color", "Editor"));
-			warning_panel_style_background->set_border_color(get_theme_color("warning_color", "Editor"));
+			warning_panel_style_background->set_bg_color(get_theme_color(SNAME("base_color"), SNAME("Editor")));
+			warning_panel_style_background->set_border_color(get_theme_color(SNAME("warning_color"), SNAME("Editor")));
 
-			error_panel_style_background->set_bg_color(get_theme_color("base_color", "Editor"));
-			error_panel_style_background->set_border_color(get_theme_color("error_color", "Editor"));
+			error_panel_style_background->set_bg_color(get_theme_color(SNAME("base_color"), SNAME("Editor")));
+			error_panel_style_background->set_border_color(get_theme_color(SNAME("error_color"), SNAME("Editor")));
 
 			// Styleboxes progress.
-			info_panel_style_progress->set_bg_color(get_theme_color("base_color", "Editor").lightened(0.03));
+			info_panel_style_progress->set_bg_color(get_theme_color(SNAME("base_color"), SNAME("Editor")).lightened(0.03));
 
-			warning_panel_style_progress->set_bg_color(get_theme_color("base_color", "Editor").lightened(0.03));
-			warning_panel_style_progress->set_border_color(get_theme_color("warning_color", "Editor"));
+			warning_panel_style_progress->set_bg_color(get_theme_color(SNAME("base_color"), SNAME("Editor")).lightened(0.03));
+			warning_panel_style_progress->set_border_color(get_theme_color(SNAME("warning_color"), SNAME("Editor")));
 
-			error_panel_style_progress->set_bg_color(get_theme_color("base_color", "Editor").lightened(0.03));
-			error_panel_style_progress->set_border_color(get_theme_color("error_color", "Editor"));
+			error_panel_style_progress->set_bg_color(get_theme_color(SNAME("base_color"), SNAME("Editor")).lightened(0.03));
+			error_panel_style_progress->set_border_color(get_theme_color(SNAME("error_color"), SNAME("Editor")));
 
-			main_button->update();
-			disable_notifications_button->update();
+			main_button->queue_redraw();
+			disable_notifications_button->queue_redraw();
 		} break;
+
 		case NOTIFICATION_TRANSFORM_CHANGED: {
 			_update_vbox_position();
 			_update_disable_notifications_button();
 		} break;
-		default:
-			break;
 	}
 }
 
@@ -158,11 +160,11 @@ void EditorToaster::_error_handler(void *p_self, const char *p_func, const char 
 	if (p_editor_notify || (show_all_setting == 0 && in_dev) || show_all_setting == 1) {
 		String err_str;
 		if (p_errorexp && p_errorexp[0]) {
-			err_str = p_errorexp;
+			err_str = String::utf8(p_errorexp);
 		} else {
-			err_str = String(p_error);
+			err_str = String::utf8(p_error);
 		}
-		String tooltip_str = String(p_file) + ":" + itos(p_line);
+		String tooltip_str = String::utf8(p_file) + ":" + itos(p_line);
 
 		if (!p_editor_notify) {
 			if (p_type == ERR_HANDLER_WARNING) {
@@ -172,11 +174,8 @@ void EditorToaster::_error_handler(void *p_self, const char *p_func, const char 
 			}
 		}
 
-		if (p_type == ERR_HANDLER_WARNING) {
-			EditorToaster::get_singleton()->popup_str(err_str, SEVERITY_WARNING, tooltip_str);
-		} else {
-			EditorToaster::get_singleton()->popup_str(err_str, SEVERITY_ERROR, tooltip_str);
-		}
+		Severity severity = (p_type == ERR_HANDLER_WARNING) ? SEVERITY_WARNING : SEVERITY_ERROR;
+		EditorToaster::get_singleton()->popup_str(err_str, severity, tooltip_str);
 	}
 }
 
@@ -231,10 +230,20 @@ void EditorToaster::_auto_hide_or_free_toasts() {
 	}
 
 	// Delete the control right away (removed as child) as it might cause issues otherwise when iterative over the vbox_container children.
-	for (unsigned int i = 0; i < to_delete.size(); i++) {
-		vbox_container->remove_child(to_delete[i]);
-		to_delete[i]->queue_delete();
-		toasts.erase(to_delete[i]);
+	for (Control *c : to_delete) {
+		vbox_container->remove_child(c);
+		c->queue_free();
+		toasts.erase(c);
+	}
+
+	if (toasts.is_empty()) {
+		main_button->set_tooltip_text(TTR("No notifications."));
+		main_button->set_modulate(Color(0.5, 0.5, 0.5));
+		main_button->set_disabled(true);
+	} else {
+		main_button->set_tooltip_text(TTR("Show notifications."));
+		main_button->set_modulate(Color(1, 1, 1));
+		main_button->set_disabled(false);
 	}
 }
 
@@ -259,13 +268,13 @@ void EditorToaster::_draw_button() {
 	real_t button_radius = main_button->get_size().x / 8;
 	switch (highest_severity) {
 		case SEVERITY_INFO:
-			color = get_theme_color("accent_color", "Editor");
+			color = get_theme_color(SNAME("accent_color"), SNAME("Editor"));
 			break;
 		case SEVERITY_WARNING:
-			color = get_theme_color("warning_color", "Editor");
+			color = get_theme_color(SNAME("warning_color"), SNAME("Editor"));
 			break;
 		case SEVERITY_ERROR:
-			color = get_theme_color("error_color", "Editor");
+			color = get_theme_color(SNAME("error_color"), SNAME("Editor"));
 			break;
 		default:
 			break;
@@ -276,7 +285,7 @@ void EditorToaster::_draw_button() {
 void EditorToaster::_draw_progress(Control *panel) {
 	if (toasts.has(panel) && toasts[panel].remaining_time > 0 && toasts[panel].duration > 0) {
 		Size2 size = panel->get_size();
-		size.x *= MIN(1, Math::range_lerp(toasts[panel].remaining_time, 0, toasts[panel].duration, 0, 2));
+		size.x *= MIN(1, Math::remap(toasts[panel].remaining_time, 0, toasts[panel].duration, 0, 2));
 
 		Ref<StyleBoxFlat> stylebox;
 		switch (toasts[panel].severity) {
@@ -309,7 +318,7 @@ void EditorToaster::_set_notifications_enabled(bool p_enabled) {
 void EditorToaster::_repop_old() {
 	// Repop olds, up to max_temporary_count
 	bool needs_update = false;
-	int visible = 0;
+	int visible_count = 0;
 	for (int i = vbox_container->get_child_count() - 1; i >= 0; i--) {
 		Control *control = Object::cast_to<Control>(vbox_container->get_child(i));
 		if (!control->is_visible()) {
@@ -318,22 +327,22 @@ void EditorToaster::_repop_old() {
 			toasts[control].popped = true;
 			needs_update = true;
 		}
-		visible++;
-		if (visible >= max_temporary_count) {
+		visible_count++;
+		if (visible_count >= max_temporary_count) {
 			break;
 		}
 	}
 	if (needs_update) {
 		_update_vbox_position();
 		_update_disable_notifications_button();
-		main_button->update();
+		main_button->queue_redraw();
 	}
 }
 
 Control *EditorToaster::popup(Control *p_control, Severity p_severity, double p_time, String p_tooltip) {
 	// Create the panel according to the severity.
 	PanelContainer *panel = memnew(PanelContainer);
-	panel->set_tooltip(p_tooltip);
+	panel->set_tooltip_text(p_tooltip);
 	switch (p_severity) {
 		case SEVERITY_INFO:
 			panel->add_theme_style_override("panel", info_panel_style_background);
@@ -348,7 +357,7 @@ Control *EditorToaster::popup(Control *p_control, Severity p_severity, double p_
 			break;
 	}
 	panel->set_modulate(Color(1, 1, 1, 0));
-	panel->connect("draw", callable_bind(callable_mp(this, &EditorToaster::_draw_progress), panel));
+	panel->connect("draw", callable_mp(this, &EditorToaster::_draw_progress).bind(panel));
 
 	// Horizontal container.
 	HBoxContainer *hbox_container = memnew(HBoxContainer);
@@ -363,8 +372,9 @@ Control *EditorToaster::popup(Control *p_control, Severity p_severity, double p_
 	if (p_time > 0.0) {
 		Button *close_button = memnew(Button);
 		close_button->set_flat(true);
-		close_button->set_icon(get_theme_icon("Close", "EditorIcons"));
-		close_button->connect("pressed", callable_bind(callable_mp(this, &EditorToaster::close), panel));
+		close_button->set_icon(get_theme_icon(SNAME("Close"), SNAME("EditorIcons")));
+		close_button->connect("pressed", callable_mp(this, &EditorToaster::close).bind(panel));
+		close_button->connect("theme_changed", callable_mp(this, &EditorToaster::_close_button_theme_changed).bind(close_button));
 		hbox_container->add_child(close_button);
 	}
 
@@ -380,12 +390,25 @@ Control *EditorToaster::popup(Control *p_control, Severity p_severity, double p_
 	_auto_hide_or_free_toasts();
 	_update_vbox_position();
 	_update_disable_notifications_button();
-	main_button->update();
+	main_button->queue_redraw();
 
 	return panel;
 }
 
 void EditorToaster::popup_str(String p_message, Severity p_severity, String p_tooltip) {
+	if (is_processing_error) {
+		return;
+	}
+
+	// Since "_popup_str" adds nodes to the tree, and since the "add_child" method is not
+	// thread-safe, it's better to defer the call to the next cycle to be thread-safe.
+	is_processing_error = true;
+	call_deferred(SNAME("_popup_str"), p_message, p_severity, p_tooltip);
+	is_processing_error = false;
+}
+
+void EditorToaster::_popup_str(String p_message, Severity p_severity, String p_tooltip) {
+	is_processing_error = true;
 	// Check if we already have a popup with the given message.
 	Control *control = nullptr;
 	for (KeyValue<Control *, Toast> element : toasts) {
@@ -397,12 +420,21 @@ void EditorToaster::popup_str(String p_message, Severity p_severity, String p_to
 
 	// Create a new message if needed.
 	if (control == nullptr) {
-		Label *label = memnew(Label);
+		HBoxContainer *hb = memnew(HBoxContainer);
+		hb->add_theme_constant_override("separation", 0);
 
-		control = popup(label, p_severity, default_message_duration, p_tooltip);
+		Label *label = memnew(Label);
+		hb->add_child(label);
+
+		Label *count_label = memnew(Label);
+		hb->add_child(count_label);
+
+		control = popup(hb, p_severity, default_message_duration, p_tooltip);
 		toasts[control].message = p_message;
 		toasts[control].tooltip = p_tooltip;
 		toasts[control].count = 1;
+		toasts[control].message_label = label;
+		toasts[control].message_count_label = count_label;
 	} else {
 		if (toasts[control].popped) {
 			toasts[control].count += 1;
@@ -416,17 +448,35 @@ void EditorToaster::popup_str(String p_message, Severity p_severity, String p_to
 		_auto_hide_or_free_toasts();
 		_update_vbox_position();
 		_update_disable_notifications_button();
-		main_button->update();
+		main_button->queue_redraw();
 	}
 
-	// Retrieve the label back then update the text.
-	Label *label = Object::cast_to<Label>(control->get_child(0)->get_child(0));
-	ERR_FAIL_COND(!label);
-	if (toasts[control].count == 1) {
-		label->set_text(p_message);
-	} else {
-		label->set_text(vformat("%s (%d)", p_message, toasts[control].count));
+	// Retrieve the label back, then update the text.
+	Label *message_label = toasts[control].message_label;
+	ERR_FAIL_COND(!message_label);
+	message_label->set_text(p_message);
+	message_label->set_text_overrun_behavior(TextServer::OVERRUN_NO_TRIMMING);
+	message_label->set_custom_minimum_size(Size2());
+
+	Size2i size = message_label->get_combined_minimum_size();
+	int limit_width = get_viewport_rect().size.x / 2; // Limit label size to half the viewport size.
+	if (size.x > limit_width) {
+		message_label->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+		message_label->set_custom_minimum_size(Size2(limit_width, 0));
 	}
+
+	// Retrieve the count label back, then update the text.
+	Label *message_count_label = toasts[control].message_count_label;
+	if (toasts[control].count == 1) {
+		message_count_label->hide();
+	} else {
+		message_count_label->set_text(vformat("(%d)", toasts[control].count));
+		message_count_label->show();
+	}
+
+	vbox_container->reset_size();
+
+	is_processing_error = false;
 }
 
 void EditorToaster::close(Control *p_control) {
@@ -435,8 +485,20 @@ void EditorToaster::close(Control *p_control) {
 	toasts[p_control].popped = false;
 }
 
+void EditorToaster::_close_button_theme_changed(Control *p_close_button) {
+	Button *close_button = Object::cast_to<Button>(p_close_button);
+	if (close_button) {
+		close_button->set_icon(get_theme_icon(SNAME("Close"), SNAME("EditorIcons")));
+	}
+}
+
 EditorToaster *EditorToaster::get_singleton() {
 	return singleton;
+}
+
+void EditorToaster::_bind_methods() {
+	// Binding method to make it defer-able.
+	ClassDB::bind_method(D_METHOD("_popup_str", "message", "severity", "tooltip"), &EditorToaster::_popup_str);
 }
 
 EditorToaster::EditorToaster() {
@@ -463,10 +525,7 @@ EditorToaster::EditorToaster() {
 
 	Ref<StyleBoxFlat> boxes[] = { info_panel_style_background, warning_panel_style_background, error_panel_style_background };
 	for (int i = 0; i < 3; i++) {
-		boxes[i]->set_default_margin(SIDE_LEFT, int(stylebox_radius * 2.5));
-		boxes[i]->set_default_margin(SIDE_RIGHT, int(stylebox_radius * 2.5));
-		boxes[i]->set_default_margin(SIDE_TOP, 3);
-		boxes[i]->set_default_margin(SIDE_BOTTOM, 3);
+		boxes[i]->set_content_margin_individual(int(stylebox_radius * 2.5), 3, int(stylebox_radius * 2.5), 3);
 	}
 
 	// Theming (progress).
@@ -483,8 +542,11 @@ EditorToaster::EditorToaster() {
 
 	// Main button.
 	main_button = memnew(Button);
+	main_button->set_tooltip_text(TTR("No notifications."));
+	main_button->set_modulate(Color(0.5, 0.5, 0.5));
+	main_button->set_disabled(true);
 	main_button->set_flat(true);
-	main_button->connect("pressed", callable_mp(this, &EditorToaster::_set_notifications_enabled), varray(true));
+	main_button->connect("pressed", callable_mp(this, &EditorToaster::_set_notifications_enabled).bind(true));
 	main_button->connect("pressed", callable_mp(this, &EditorToaster::_repop_old));
 	main_button->connect("draw", callable_mp(this, &EditorToaster::_draw_button));
 	add_child(main_button);
@@ -496,8 +558,9 @@ EditorToaster::EditorToaster() {
 	add_child(disable_notifications_panel);
 
 	disable_notifications_button = memnew(Button);
+	disable_notifications_button->set_tooltip_text(TTR("Silence the notifications."));
 	disable_notifications_button->set_flat(true);
-	disable_notifications_button->connect("pressed", callable_mp(this, &EditorToaster::_set_notifications_enabled), varray(false));
+	disable_notifications_button->connect("pressed", callable_mp(this, &EditorToaster::_set_notifications_enabled).bind(false));
 	disable_notifications_panel->add_child(disable_notifications_button);
 
 	// Other

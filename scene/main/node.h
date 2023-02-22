@@ -1,52 +1,49 @@
-/*************************************************************************/
-/*  node.h                                                               */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  node.h                                                                */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #ifndef NODE_H
 #define NODE_H
 
-#include "core/config/project_settings.h"
-#include "core/object/class_db.h"
-#include "core/object/script_language.h"
 #include "core/string/node_path.h"
-#include "core/templates/map.h"
+#include "core/templates/rb_map.h"
 #include "core/variant/typed_array.h"
 #include "scene/main/scene_tree.h"
 
 class Viewport;
+class Window;
 class SceneState;
 class Tween;
 class PropertyTweener;
 
 class Node : public Object {
 	GDCLASS(Node, Object);
-	OBJ_CATEGORY("Nodes");
 
 public:
 	enum ProcessMode {
@@ -61,7 +58,7 @@ public:
 		DUPLICATE_SIGNALS = 1,
 		DUPLICATE_GROUPS = 2,
 		DUPLICATE_SCRIPTS = 4,
-		DUPLICATE_USE_INSTANCING = 8,
+		DUPLICATE_USE_INSTANTIATION = 8,
 #ifdef TOOLS_ENABLED
 		DUPLICATE_FROM_EDITOR = 16,
 #endif
@@ -95,6 +92,7 @@ private:
 		SceneTree::Group *group = nullptr;
 	};
 
+	// This Data struct is to avoid namespace pollution in derived classes.
 	struct Data {
 		String scene_file_path;
 		Ref<SceneState> instance_state;
@@ -103,9 +101,12 @@ private:
 		Node *parent = nullptr;
 		Node *owner = nullptr;
 		Vector<Node *> children;
+		HashMap<StringName, Node *> owned_unique_nodes;
+		bool unique_name_in_owner = false;
+
 		int internal_children_front = 0;
 		int internal_children_back = 0;
-		int pos = -1;
+		int index = -1;
 		int depth = -1;
 		int blocked = 0; // Safeguard that throws an error when attempting to modify the tree in a harmful way while being traversed.
 		StringName name;
@@ -120,7 +121,7 @@ private:
 
 		Viewport *viewport = nullptr;
 
-		Map<StringName, GroupData> grouped;
+		HashMap<StringName, GroupData> grouped;
 		List<Node *>::Element *OW = nullptr; // Owned element.
 		List<Node *> owned;
 
@@ -128,7 +129,7 @@ private:
 		Node *process_owner = nullptr;
 
 		int multiplayer_authority = 1; // Server by default.
-		Vector<Multiplayer::RPCConfig> rpc_methods;
+		Variant rpc_config;
 
 		// Variables used to properly sort the node when processing, ignored otherwise.
 		// TODO: Should move all the stuff below to bits.
@@ -140,6 +141,7 @@ private:
 		bool process_internal = false;
 
 		bool input = false;
+		bool shortcut_input = false;
 		bool unhandled_input = false;
 		bool unhandled_key_input = false;
 
@@ -172,22 +174,21 @@ private:
 	void _propagate_ready();
 	void _propagate_exit_tree();
 	void _propagate_after_exit_tree();
-	void _propagate_validate_owner();
-	void _print_stray_nodes();
 	void _propagate_process_owner(Node *p_owner, int p_pause_notification, int p_enabled_notification);
+	void _propagate_groups_dirty();
 	Array _get_node_and_resource(const NodePath &p_path);
 
 	void _duplicate_signals(const Node *p_original, Node *p_copy) const;
-	Node *_duplicate(int p_flags, Map<const Node *, Node *> *r_duplimap = nullptr) const;
+	Node *_duplicate(int p_flags, HashMap<const Node *, Node *> *r_duplimap = nullptr) const;
 
 	TypedArray<Node> _get_children(bool p_include_internal = true) const;
-	Array _get_groups() const;
+	TypedArray<StringName> _get_groups() const;
 
-	Variant _rpc_bind(const Variant **p_args, int p_argcount, Callable::CallError &r_error);
-	Variant _rpc_id_bind(const Variant **p_args, int p_argcount, Callable::CallError &r_error);
+	Error _rpc_bind(const Variant **p_args, int p_argcount, Callable::CallError &r_error);
+	Error _rpc_id_bind(const Variant **p_args, int p_argcount, Callable::CallError &r_error);
 
-	_FORCE_INLINE_ bool _is_internal_front() const { return data.parent && data.pos < data.parent->data.internal_children_front; }
-	_FORCE_INLINE_ bool _is_internal_back() const { return data.parent && data.pos >= data.parent->data.children.size() - data.parent->data.internal_children_back; }
+	_FORCE_INLINE_ bool _is_internal_front() const { return data.parent && data.index < data.parent->data.internal_children_front; }
+	_FORCE_INLINE_ bool _is_internal_back() const { return data.parent && data.index >= data.parent->data.children.size() - data.parent->data.internal_children_back; }
 
 	friend class SceneTree;
 
@@ -196,6 +197,9 @@ private:
 
 	_FORCE_INLINE_ bool _can_process(bool p_paused) const;
 	_FORCE_INLINE_ bool _is_enabled() const;
+
+	void _release_unique_name_in_owner();
+	void _acquire_unique_name_in_owner();
 
 protected:
 	void _block() { data.blocked++; }
@@ -206,6 +210,7 @@ protected:
 	virtual void add_child_notify(Node *p_child);
 	virtual void remove_child_notify(Node *p_child);
 	virtual void move_child_notify(Node *p_child);
+	virtual void owner_changed_notify();
 
 	void _propagate_replace_owner(Node *p_owner, Node *p_by_owner);
 
@@ -213,7 +218,6 @@ protected:
 	static String _get_name_num_separator();
 
 	friend class SceneState;
-	friend class MultiplayerReplicator;
 
 	void _add_child_nocheck(Node *p_child, const StringName &p_name);
 	void _set_owner_nocheck(Node *p_owner);
@@ -221,11 +225,13 @@ protected:
 
 	//call from SceneTree
 	void _call_input(const Ref<InputEvent> &p_event);
+	void _call_shortcut_input(const Ref<InputEvent> &p_event);
 	void _call_unhandled_input(const Ref<InputEvent> &p_event);
 	void _call_unhandled_key_input(const Ref<InputEvent> &p_event);
 
 protected:
 	virtual void input(const Ref<InputEvent> &p_event);
+	virtual void shortcut_input(const Ref<InputEvent> &p_key_event);
 	virtual void unhandled_input(const Ref<InputEvent> &p_event);
 	virtual void unhandled_key_input(const Ref<InputEvent> &p_key_event);
 
@@ -237,6 +243,7 @@ protected:
 	GDVIRTUAL0RC(Vector<String>, _get_configuration_warnings)
 
 	GDVIRTUAL1(_input, Ref<InputEvent>)
+	GDVIRTUAL1(_shortcut_input, Ref<InputEvent>)
 	GDVIRTUAL1(_unhandled_input, Ref<InputEvent>)
 	GDVIRTUAL1(_unhandled_key_input, Ref<InputEvent>)
 
@@ -253,16 +260,17 @@ public:
 		NOTIFICATION_PROCESS = 17,
 		NOTIFICATION_PARENTED = 18,
 		NOTIFICATION_UNPARENTED = 19,
-		NOTIFICATION_INSTANCED = 20,
+		NOTIFICATION_SCENE_INSTANTIATED = 20,
 		NOTIFICATION_DRAG_BEGIN = 21,
 		NOTIFICATION_DRAG_END = 22,
-		NOTIFICATION_PATH_CHANGED = 23,
+		NOTIFICATION_PATH_RENAMED = 23,
 		//NOTIFICATION_TRANSLATION_CHANGED = 24, moved below
 		NOTIFICATION_INTERNAL_PROCESS = 25,
 		NOTIFICATION_INTERNAL_PHYSICS_PROCESS = 26,
 		NOTIFICATION_POST_ENTER_TREE = 27,
 		NOTIFICATION_DISABLED = 28,
 		NOTIFICATION_ENABLED = 29,
+		NOTIFICATION_NODE_RECACHE_REQUESTED = 30,
 		//keep these linked to node
 
 		NOTIFICATION_WM_MOUSE_ENTER = 1002,
@@ -273,6 +281,8 @@ public:
 		NOTIFICATION_WM_GO_BACK_REQUEST = 1007,
 		NOTIFICATION_WM_SIZE_CHANGED = 1008,
 		NOTIFICATION_WM_DPI_CHANGE = 1009,
+		NOTIFICATION_VP_MOUSE_ENTER = 1010,
+		NOTIFICATION_VP_MOUSE_EXIT = 1011,
 
 		NOTIFICATION_OS_MEMORY_WARNING = MainLoop::NOTIFICATION_OS_MEMORY_WARNING,
 		NOTIFICATION_TRANSLATION_CHANGED = MainLoop::NOTIFICATION_TRANSLATION_CHANGED,
@@ -295,8 +305,8 @@ public:
 	StringName get_name() const;
 	void set_name(const String &p_name);
 
-	void add_child(Node *p_child, bool p_legible_unique_name = false, InternalMode p_internal = INTERNAL_MODE_DISABLED);
-	void add_sibling(Node *p_sibling, bool p_legible_unique_name = false);
+	void add_child(Node *p_child, bool p_force_readable_name = false, InternalMode p_internal = INTERNAL_MODE_DISABLED);
+	void add_sibling(Node *p_sibling, bool p_force_readable_name = false);
 	void remove_child(Node *p_child);
 
 	int get_child_count(bool p_include_internal = true) const;
@@ -304,12 +314,16 @@ public:
 	bool has_node(const NodePath &p_path) const;
 	Node *get_node(const NodePath &p_path) const;
 	Node *get_node_or_null(const NodePath &p_path) const;
-	Node *find_node(const String &p_mask, bool p_recursive = true, bool p_owned = true) const;
+	Node *find_child(const String &p_pattern, bool p_recursive = true, bool p_owned = true) const;
+	TypedArray<Node> find_children(const String &p_pattern, const String &p_type = "", bool p_recursive = true, bool p_owned = true) const;
 	bool has_node_and_resource(const NodePath &p_path) const;
-	Node *get_node_and_resource(const NodePath &p_path, RES &r_res, Vector<StringName> &r_leftover_subpath, bool p_last_is_property = true) const;
+	Node *get_node_and_resource(const NodePath &p_path, Ref<Resource> &r_res, Vector<StringName> &r_leftover_subpath, bool p_last_is_property = true) const;
 
+	virtual void reparent(Node *p_parent, bool p_keep_global_transform = true);
 	Node *get_parent() const;
-	Node *find_parent(const String &p_mask) const;
+	Node *find_parent(const String &p_pattern) const;
+
+	Window *get_window() const;
 
 	_FORCE_INLINE_ SceneTree *get_tree() const {
 		ERR_FAIL_COND_V(!data.tree, nullptr);
@@ -322,7 +336,7 @@ public:
 	bool is_greater_than(const Node *p_node) const;
 
 	NodePath get_path() const;
-	NodePath get_path_to(const Node *p_node) const;
+	NodePath get_path_to(const Node *p_node, bool p_use_unique_path = false) const;
 	Node *find_common_parent_with(const Node *p_node) const;
 
 	void add_to_group(const StringName &p_identifier, bool p_persistent = false);
@@ -337,15 +351,16 @@ public:
 	void get_groups(List<GroupInfo> *p_groups) const;
 	int get_persistent_group_count() const;
 
-	void move_child(Node *p_child, int p_pos);
-	void _move_child(Node *p_child, int p_pos, bool p_ignore_end = false);
-	void raise();
+	void move_child(Node *p_child, int p_index);
+	void _move_child(Node *p_child, int p_index, bool p_ignore_end = false);
 
 	void set_owner(Node *p_owner);
 	Node *get_owner() const;
 	void get_owned_by(Node *p_by, List<Node *> *p_owned);
 
-	void remove_and_skip();
+	void set_unique_name_in_owner(bool p_enabled);
+	bool is_unique_name_in_owner() const;
+
 	int get_index(bool p_include_internal = true) const;
 
 	Ref<Tween> create_tween();
@@ -362,6 +377,13 @@ public:
 	void set_editable_instance(Node *p_node, bool p_editable);
 	bool is_editable_instance(const Node *p_node) const;
 	Node *get_deepest_editable_node(Node *p_start_node) const;
+
+#ifdef TOOLS_ENABLED
+	void set_property_pinned(const String &p_property, bool p_pinned);
+	bool is_property_pinned(const StringName &p_property) const;
+	virtual StringName get_property_store_alias(const StringName &p_property) const;
+#endif
+	void get_storable_properties(HashSet<StringName> &r_storable_properties) const;
 
 	virtual String to_string() override;
 
@@ -392,6 +414,9 @@ public:
 	void set_process_input(bool p_enable);
 	bool is_processing_input() const;
 
+	void set_process_shortcut_input(bool p_enable);
+	bool is_processing_shortcut_input() const;
+
 	void set_process_unhandled_input(bool p_enable);
 	bool is_processing_unhandled_input() const;
 
@@ -400,10 +425,10 @@ public:
 
 	Node *duplicate(int p_flags = DUPLICATE_GROUPS | DUPLICATE_SIGNALS | DUPLICATE_SCRIPTS) const;
 #ifdef TOOLS_ENABLED
-	Node *duplicate_from_editor(Map<const Node *, Node *> &r_duplimap) const;
-	Node *duplicate_from_editor(Map<const Node *, Node *> &r_duplimap, const Map<RES, RES> &p_resource_remap) const;
-	void remap_node_resources(Node *p_node, const Map<RES, RES> &p_resource_remap) const;
-	void remap_nested_resources(RES p_resource, const Map<RES, RES> &p_resource_remap) const;
+	Node *duplicate_from_editor(HashMap<const Node *, Node *> &r_duplimap) const;
+	Node *duplicate_from_editor(HashMap<const Node *, Node *> &r_duplimap, const HashMap<Ref<Resource>, Ref<Resource>> &p_resource_remap) const;
+	void remap_node_resources(Node *p_node, const HashMap<Ref<Resource>, Ref<Resource>> &p_resource_remap) const;
+	void remap_nested_resources(Ref<Resource> p_resource, const HashMap<Ref<Resource>, Ref<Resource>> &p_resource_remap) const;
 #endif
 
 	// used by editors, to save what has changed only
@@ -416,7 +441,11 @@ public:
 	void set_scene_instance_load_placeholder(bool p_enable);
 	bool get_scene_instance_load_placeholder() const;
 
-	static Vector<Variant> make_binds(VARIANT_ARG_LIST);
+	template <typename... VarArgs>
+	Vector<Variant> make_binds(VarArgs... p_args) {
+		Vector<Variant> binds = { p_args... };
+		return binds;
+	}
 
 	void replace_by(Node *p_node, bool p_keep_data = false);
 
@@ -428,16 +457,16 @@ public:
 
 	void request_ready();
 
-	static void print_stray_nodes();
+	static void print_orphan_nodes();
 
 #ifdef TOOLS_ENABLED
 	String validate_child_name(Node *p_child);
 #endif
+	static String adjust_name_casing(const String &p_name);
 
-	void queue_delete();
+	void queue_free();
 
 	//hacks for speed
-	static void set_human_readable_collision_renaming(bool p_enabled);
 	static void init_node_hrcr();
 
 	void force_parent_owned() { data.parent_owned = true; } //hack to avoid duplicate nodes
@@ -453,7 +482,7 @@ public:
 
 	_FORCE_INLINE_ Viewport *get_viewport() const { return data.viewport; }
 
-	virtual TypedArray<String> get_configuration_warnings() const;
+	virtual PackedStringArray get_configuration_warnings() const;
 	String get_configuration_warnings_as_string() const;
 
 	void update_configuration_warnings();
@@ -462,20 +491,22 @@ public:
 	bool is_displayed_folded() const;
 	/* NETWORK */
 
-	void set_multiplayer_authority(int p_peer_id, bool p_recursive = true);
+	virtual void set_multiplayer_authority(int p_peer_id, bool p_recursive = true);
 	int get_multiplayer_authority() const;
 	bool is_multiplayer_authority() const;
 
-	uint16_t rpc_config(const StringName &p_method, Multiplayer::RPCMode p_rpc_mode, bool p_call_local = false, Multiplayer::TransferMode p_transfer_mode = Multiplayer::TRANSFER_MODE_RELIABLE, int p_channel = 0); // config a local method for RPC
-	Vector<Multiplayer::RPCConfig> get_node_rpc_methods() const;
+	void rpc_config(const StringName &p_method, const Variant &p_config); // config a local method for RPC
+	const Variant get_node_rpc_config() const;
 
-	void rpc(const StringName &p_method, VARIANT_ARG_LIST); // RPC, honors RPCMode, TransferMode, channel
-	void rpc_id(int p_peer_id, const StringName &p_method, VARIANT_ARG_LIST); // RPC to specific peer(s), honors RPCMode, TransferMode, channel
-	void rpcp(int p_peer_id, const StringName &p_method, const Variant **p_arg, int p_argcount);
+	template <typename... VarArgs>
+	Error rpc(const StringName &p_method, VarArgs... p_args);
+
+	template <typename... VarArgs>
+	Error rpc_id(int p_peer_id, const StringName &p_method, VarArgs... p_args);
+
+	Error rpcp(int p_peer_id, const StringName &p_method, const Variant **p_arg, int p_argcount);
 
 	Ref<MultiplayerAPI> get_multiplayer() const;
-	Ref<MultiplayerAPI> get_custom_multiplayer() const;
-	void set_custom_multiplayer(Ref<MultiplayerAPI> p_multiplayer);
 
 	Node();
 	~Node();
@@ -483,6 +514,28 @@ public:
 
 VARIANT_ENUM_CAST(Node::DuplicateFlags);
 
-typedef Set<Node *, Node::Comparator> NodeSet;
+typedef HashSet<Node *, Node::Comparator> NodeSet;
 
-#endif
+// Template definitions must be in the header so they are always fully initialized before their usage.
+// See this StackOverflow question for more information: https://stackoverflow.com/questions/495021/why-can-templates-only-be-implemented-in-the-header-file
+
+template <typename... VarArgs>
+Error Node::rpc(const StringName &p_method, VarArgs... p_args) {
+	return rpc_id(0, p_method, p_args...);
+}
+
+template <typename... VarArgs>
+Error Node::rpc_id(int p_peer_id, const StringName &p_method, VarArgs... p_args) {
+	Variant args[sizeof...(p_args) + 1] = { p_args..., Variant() }; // +1 makes sure zero sized arrays are also supported.
+	const Variant *argptrs[sizeof...(p_args) + 1];
+	for (uint32_t i = 0; i < sizeof...(p_args); i++) {
+		argptrs[i] = &args[i];
+	}
+	return rpcp(p_peer_id, p_method, sizeof...(p_args) == 0 ? nullptr : (const Variant **)argptrs, sizeof...(p_args));
+}
+
+// Add these macro to your class's 'get_configuration_warnings' function to have warnings show up in the scene tree inspector.
+#define DEPRECATED_NODE_WARNING warnings.push_back(RTR("This node is marked as deprecated and will be removed in future versions.\nPlease check the Godot documentation for information about migration."));
+#define EXPERIMENTAL_NODE_WARNING warnings.push_back(RTR("This node is marked as experimental and may be subject to removal or major changes in future versions."));
+
+#endif // NODE_H

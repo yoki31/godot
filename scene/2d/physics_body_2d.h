@@ -1,32 +1,32 @@
-/*************************************************************************/
-/*  physics_body_2d.h                                                    */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  physics_body_2d.h                                                     */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #ifndef PHYSICS_BODY_2D_H
 #define PHYSICS_BODY_2D_H
@@ -47,11 +47,11 @@ protected:
 
 	Ref<KinematicCollision2D> motion_cache;
 
-	Ref<KinematicCollision2D> _move(const Vector2 &p_linear_velocity, bool p_test_only = false, real_t p_margin = 0.08);
+	Ref<KinematicCollision2D> _move(const Vector2 &p_motion, bool p_test_only = false, real_t p_margin = 0.08, bool p_recovery_as_collision = false);
 
 public:
 	bool move_and_collide(const PhysicsServer2D::MotionParameters &p_parameters, PhysicsServer2D::MotionResult &r_result, bool p_test_only = false, bool p_cancel_sliding = true);
-	bool test_move(const Transform2D &p_from, const Vector2 &p_linear_velocity, const Ref<KinematicCollision2D> &r_collision = Ref<KinematicCollision2D>(), real_t p_margin = 0.08);
+	bool test_move(const Transform2D &p_from, const Vector2 &p_motion, const Ref<KinematicCollision2D> &r_collision = Ref<KinematicCollision2D>(), real_t p_margin = 0.08, bool p_recovery_as_collision = false);
 
 	TypedArray<PhysicsBody2D> get_collision_exceptions();
 	void add_collision_exception_with(Node *p_node); //must be physicsbody
@@ -113,8 +113,8 @@ private:
 	bool is_sync_to_physics_enabled() const;
 };
 
-class RigidDynamicBody2D : public PhysicsBody2D {
-	GDCLASS(RigidDynamicBody2D, PhysicsBody2D);
+class RigidBody2D : public PhysicsBody2D {
+	GDCLASS(RigidBody2D, PhysicsBody2D);
 
 public:
 	enum FreezeMode {
@@ -125,6 +125,11 @@ public:
 	enum CenterOfMassMode {
 		CENTER_OF_MASS_MODE_AUTO,
 		CENTER_OF_MASS_MODE_CUSTOM,
+	};
+
+	enum DampMode {
+		DAMP_MODE_COMBINE,
+		DAMP_MODE_REPLACE,
 	};
 
 	enum CCDMode {
@@ -146,8 +151,12 @@ private:
 
 	Ref<PhysicsMaterial> physics_material_override;
 	real_t gravity_scale = 1.0;
-	real_t linear_damp = -1.0;
-	real_t angular_damp = -1.0;
+
+	DampMode linear_damp_mode = DAMP_MODE_COMBINE;
+	DampMode angular_damp_mode = DAMP_MODE_COMBINE;
+
+	real_t linear_damp = 0.0;
+	real_t angular_damp = 0.0;
 
 	Vector2 linear_velocity;
 	real_t angular_velocity = 0.0;
@@ -177,7 +186,7 @@ private:
 			local_shape = p_ls;
 		}
 	};
-	struct RigidDynamicBody2D_RemoveAction {
+	struct RigidBody2D_RemoveAction {
 		RID rid;
 		ObjectID body_id;
 		ShapePair pair;
@@ -191,7 +200,7 @@ private:
 
 	struct ContactMonitor {
 		bool locked = false;
-		Map<ObjectID, BodyState> body_map;
+		HashMap<ObjectID, BodyState> body_map;
 	};
 
 	ContactMonitor *contact_monitor = nullptr;
@@ -207,7 +216,7 @@ protected:
 	void _notification(int p_what);
 	static void _bind_methods();
 
-	virtual void _validate_property(PropertyInfo &property) const override;
+	void _validate_property(PropertyInfo &p_property) const;
 
 	GDVIRTUAL1(_integrate_forces, PhysicsDirectBodyState2D *)
 
@@ -241,6 +250,12 @@ public:
 	void set_gravity_scale(real_t p_gravity_scale);
 	real_t get_gravity_scale() const;
 
+	void set_linear_damp_mode(DampMode p_mode);
+	DampMode get_linear_damp_mode() const;
+
+	void set_angular_damp_mode(DampMode p_mode);
+	DampMode get_angular_damp_mode() const;
+
 	void set_linear_damp(real_t p_linear_damp);
 	real_t get_linear_damp() const;
 
@@ -269,6 +284,7 @@ public:
 
 	void set_max_contacts_reported(int p_amount);
 	int get_max_contacts_reported() const;
+	int get_contact_count() const;
 
 	void set_continuous_collision_detection_mode(CCDMode p_mode);
 	CCDMode get_continuous_collision_detection_mode() const;
@@ -277,30 +293,35 @@ public:
 	void apply_impulse(const Vector2 &p_impulse, const Vector2 &p_position = Vector2());
 	void apply_torque_impulse(real_t p_torque);
 
-	void set_applied_force(const Vector2 &p_force);
-	Vector2 get_applied_force() const;
+	void apply_central_force(const Vector2 &p_force);
+	void apply_force(const Vector2 &p_force, const Vector2 &p_position = Vector2());
+	void apply_torque(real_t p_torque);
 
-	void set_applied_torque(const real_t p_torque);
-	real_t get_applied_torque() const;
+	void add_constant_central_force(const Vector2 &p_force);
+	void add_constant_force(const Vector2 &p_force, const Vector2 &p_position = Vector2());
+	void add_constant_torque(real_t p_torque);
 
-	void add_central_force(const Vector2 &p_force);
-	void add_force(const Vector2 &p_force, const Vector2 &p_position = Vector2());
-	void add_torque(real_t p_torque);
+	void set_constant_force(const Vector2 &p_force);
+	Vector2 get_constant_force() const;
+
+	void set_constant_torque(real_t p_torque);
+	real_t get_constant_torque() const;
 
 	TypedArray<Node2D> get_colliding_bodies() const; //function for script
 
-	virtual TypedArray<String> get_configuration_warnings() const override;
+	virtual PackedStringArray get_configuration_warnings() const override;
 
-	RigidDynamicBody2D();
-	~RigidDynamicBody2D();
+	RigidBody2D();
+	~RigidBody2D();
 
 private:
 	void _reload_physics_characteristics();
 };
 
-VARIANT_ENUM_CAST(RigidDynamicBody2D::FreezeMode);
-VARIANT_ENUM_CAST(RigidDynamicBody2D::CenterOfMassMode);
-VARIANT_ENUM_CAST(RigidDynamicBody2D::CCDMode);
+VARIANT_ENUM_CAST(RigidBody2D::FreezeMode);
+VARIANT_ENUM_CAST(RigidBody2D::CenterOfMassMode);
+VARIANT_ENUM_CAST(RigidBody2D::DampMode);
+VARIANT_ENUM_CAST(RigidBody2D::CCDMode);
 
 class CharacterBody2D : public PhysicsBody2D {
 	GDCLASS(CharacterBody2D, PhysicsBody2D);
@@ -308,17 +329,17 @@ class CharacterBody2D : public PhysicsBody2D {
 public:
 	enum MotionMode {
 		MOTION_MODE_GROUNDED,
-		MOTION_MODE_FREE,
+		MOTION_MODE_FLOATING,
 	};
-	enum MovingPlatformApplyVelocityOnLeave {
-		PLATFORM_VEL_ON_LEAVE_ALWAYS,
-		PLATFORM_VEL_ON_LEAVE_UPWARD_ONLY,
-		PLATFORM_VEL_ON_LEAVE_NEVER,
+	enum PlatformOnLeave {
+		PLATFORM_ON_LEAVE_ADD_VELOCITY,
+		PLATFORM_ON_LEAVE_ADD_UPWARD_VELOCITY,
+		PLATFORM_ON_LEAVE_DO_NOTHING,
 	};
 	bool move_and_slide();
 
-	const Vector2 &get_motion_velocity() const;
-	void set_motion_velocity(const Vector2 &p_velocity);
+	const Vector2 &get_velocity() const;
+	void set_velocity(const Vector2 &p_velocity);
 
 	bool is_on_floor() const;
 	bool is_on_floor_only() const;
@@ -344,7 +365,7 @@ public:
 private:
 	real_t margin = 0.08;
 	MotionMode motion_mode = MOTION_MODE_GROUNDED;
-	MovingPlatformApplyVelocityOnLeave moving_platform_apply_velocity_on_leave = PLATFORM_VEL_ON_LEAVE_ALWAYS;
+	PlatformOnLeave platform_on_leave = PLATFORM_ON_LEAVE_ADD_VELOCITY;
 
 	bool floor_constant_speed = false;
 	bool floor_stop_on_slope = true;
@@ -352,13 +373,13 @@ private:
 	bool slide_on_ceiling = true;
 	int max_slides = 4;
 	int platform_layer = 0;
-	real_t floor_max_angle = Math::deg2rad((real_t)45.0);
+	real_t floor_max_angle = Math::deg_to_rad((real_t)45.0);
 	real_t floor_snap_length = 1;
-	real_t free_mode_min_slide_angle = Math::deg2rad((real_t)15.0);
+	real_t wall_min_slide_angle = Math::deg_to_rad((real_t)15.0);
 	Vector2 up_direction = Vector2(0.0, -1.0);
-	uint32_t moving_platform_floor_layers = UINT32_MAX;
-	uint32_t moving_platform_wall_layers = 0;
-	Vector2 motion_velocity;
+	uint32_t platform_floor_layers = UINT32_MAX;
+	uint32_t platform_wall_layers = 0;
+	Vector2 velocity;
 
 	Vector2 floor_normal;
 	Vector2 platform_velocity;
@@ -400,41 +421,41 @@ private:
 	real_t get_floor_snap_length();
 	void set_floor_snap_length(real_t p_floor_snap_length);
 
-	real_t get_free_mode_min_slide_angle() const;
-	void set_free_mode_min_slide_angle(real_t p_radians);
+	real_t get_wall_min_slide_angle() const;
+	void set_wall_min_slide_angle(real_t p_radians);
 
-	uint32_t get_moving_platform_floor_layers() const;
-	void set_moving_platform_floor_layers(const uint32_t p_exclude_layer);
+	uint32_t get_platform_floor_layers() const;
+	void set_platform_floor_layers(const uint32_t p_exclude_layer);
 
-	uint32_t get_moving_platform_wall_layers() const;
-	void set_moving_platform_wall_layers(const uint32_t p_exclude_layer);
+	uint32_t get_platform_wall_layers() const;
+	void set_platform_wall_layers(const uint32_t p_exclude_layer);
 
 	void set_motion_mode(MotionMode p_mode);
 	MotionMode get_motion_mode() const;
 
-	void set_moving_platform_apply_velocity_on_leave(MovingPlatformApplyVelocityOnLeave p_on_leave_velocity);
-	MovingPlatformApplyVelocityOnLeave get_moving_platform_apply_velocity_on_leave() const;
+	void set_platform_on_leave(PlatformOnLeave p_on_leave_velocity);
+	PlatformOnLeave get_platform_on_leave() const;
 
-	void _move_and_slide_free(double p_delta);
-	void _move_and_slide_grounded(double p_delta, bool p_was_on_floor, const Vector2 &p_prev_platform_velocity);
+	void _move_and_slide_floating(double p_delta);
+	void _move_and_slide_grounded(double p_delta, bool p_was_on_floor);
 
 	Ref<KinematicCollision2D> _get_slide_collision(int p_bounce);
 	Ref<KinematicCollision2D> _get_last_slide_collision();
 	const Vector2 &get_up_direction() const;
-	bool _on_floor_if_snapped(bool was_on_floor, bool vel_dir_facing_up);
+	bool _on_floor_if_snapped(bool p_was_on_floor, bool p_vel_dir_facing_up);
 	void set_up_direction(const Vector2 &p_up_direction);
 	void _set_collision_direction(const PhysicsServer2D::MotionResult &p_result);
 	void _set_platform_data(const PhysicsServer2D::MotionResult &p_result);
-	void _snap_on_floor(bool was_on_floor, bool vel_dir_facing_up);
+	void _snap_on_floor(bool p_was_on_floor, bool p_vel_dir_facing_up, bool p_wall_as_floor = false);
 
 protected:
 	void _notification(int p_what);
 	static void _bind_methods();
-	virtual void _validate_property(PropertyInfo &property) const override;
+	void _validate_property(PropertyInfo &p_property) const;
 };
 
 VARIANT_ENUM_CAST(CharacterBody2D::MotionMode);
-VARIANT_ENUM_CAST(CharacterBody2D::MovingPlatformApplyVelocityOnLeave);
+VARIANT_ENUM_CAST(CharacterBody2D::PlatformOnLeave);
 
 class KinematicCollision2D : public RefCounted {
 	GDCLASS(KinematicCollision2D, RefCounted);
@@ -453,6 +474,7 @@ public:
 	Vector2 get_travel() const;
 	Vector2 get_remainder() const;
 	real_t get_angle(const Vector2 &p_up_direction = Vector2(0.0, -1.0)) const;
+	real_t get_depth() const;
 	Object *get_local_shape() const;
 	Object *get_collider() const;
 	ObjectID get_collider_id() const;

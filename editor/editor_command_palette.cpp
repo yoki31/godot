@@ -1,41 +1,45 @@
-/*************************************************************************/
-/*  editor_command_palette.cpp                                           */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  editor_command_palette.cpp                                            */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #include "editor/editor_command_palette.h"
 #include "core/os/keyboard.h"
 #include "editor/editor_node.h"
 #include "editor/editor_scale.h"
+#include "editor/editor_settings.h"
 #include "scene/gui/control.h"
 #include "scene/gui/tree.h"
 
 EditorCommandPalette *EditorCommandPalette::singleton = nullptr;
+
+static Rect2i prev_rect = Rect2i();
+static bool was_showed = false;
 
 float EditorCommandPalette::_score_path(const String &p_search, const String &p_path) {
 	float score = 0.9f + .1f * (p_search.length() / (float)p_path.length());
@@ -57,22 +61,21 @@ float EditorCommandPalette::_score_path(const String &p_search, const String &p_
 }
 
 void EditorCommandPalette::_update_command_search(const String &search_text) {
-	commands.get_key_list(&command_keys);
-	ERR_FAIL_COND(command_keys.is_empty());
+	ERR_FAIL_COND(commands.size() == 0);
 
-	Map<String, TreeItem *> sections;
+	HashMap<String, TreeItem *> sections;
 	TreeItem *first_section = nullptr;
 
 	// Filter possible candidates.
 	Vector<CommandEntry> entries;
-	for (int i = 0; i < command_keys.size(); i++) {
+	for (const KeyValue<String, Command> &E : commands) {
 		CommandEntry r;
-		r.key_name = command_keys[i];
-		r.display_name = commands[r.key_name].name;
-		r.shortcut_text = commands[r.key_name].shortcut;
-		r.last_used = commands[r.key_name].last_used;
+		r.key_name = E.key;
+		r.display_name = E.value.name;
+		r.shortcut_text = E.value.shortcut;
+		r.last_used = E.value.last_used;
 
-		if (search_text.is_subsequence_ofi(r.display_name)) {
+		if (search_text.is_subsequence_ofn(r.display_name)) {
 			if (!search_text.is_empty()) {
 				r.score = _score_path(search_text, r.display_name.to_lower());
 			}
@@ -128,9 +131,9 @@ void EditorCommandPalette::_update_command_search(const String &search_text) {
 		String shortcut_text = entries[i].shortcut_text == "None" ? "" : entries[i].shortcut_text;
 		ti->set_text(0, entries[i].display_name);
 		ti->set_metadata(0, entries[i].key_name);
-		ti->set_text_align(1, TreeItem::TextAlign::ALIGN_RIGHT);
+		ti->set_text_alignment(1, HORIZONTAL_ALIGNMENT_RIGHT);
 		ti->set_text(1, shortcut_text);
-		Color c = Color(1, 1, 1, 0.5);
+		Color c = get_theme_color(SNAME("font_color"), SNAME("Editor")) * Color(1, 1, 1, 0.5);
 		ti->set_custom_color(1, c);
 	}
 
@@ -145,14 +148,25 @@ void EditorCommandPalette::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("remove_command", "key_name"), &EditorCommandPalette::remove_command);
 }
 
+void EditorCommandPalette::_notification(int p_what) {
+	switch (p_what) {
+		case NOTIFICATION_VISIBILITY_CHANGED: {
+			if (!is_visible()) {
+				prev_rect = Rect2i(get_position(), get_size());
+				was_showed = true;
+			}
+		} break;
+	}
+}
+
 void EditorCommandPalette::_sbox_input(const Ref<InputEvent> &p_ie) {
 	Ref<InputEventKey> k = p_ie;
 	if (k.is_valid()) {
 		switch (k->get_keycode()) {
-			case KEY_UP:
-			case KEY_DOWN:
-			case KEY_PAGEUP:
-			case KEY_PAGEDOWN: {
+			case Key::UP:
+			case Key::DOWN:
+			case Key::PAGEUP:
+			case Key::PAGEDOWN: {
 				search_options->gui_input(k);
 			} break;
 			default:
@@ -164,14 +178,18 @@ void EditorCommandPalette::_sbox_input(const Ref<InputEvent> &p_ie) {
 void EditorCommandPalette::_confirmed() {
 	TreeItem *selected_option = search_options->get_selected();
 	String command_key = selected_option != nullptr ? selected_option->get_metadata(0) : "";
-	if (command_key != "") {
+	if (!command_key.is_empty()) {
 		hide();
 		execute_command(command_key);
 	}
 }
 
 void EditorCommandPalette::open_popup() {
-	popup_centered_clamped(Size2i(600, 440), 0.8f);
+	if (was_showed) {
+		popup(prev_rect);
+	} else {
+		popup_centered_clamped(Size2(600, 440) * EDSCALE, 0.8f);
+	}
 
 	command_search_box->clear();
 	command_search_box->grab_focus();
@@ -180,7 +198,9 @@ void EditorCommandPalette::open_popup() {
 }
 
 void EditorCommandPalette::get_actions_list(List<String> *p_list) const {
-	commands.get_key_list(p_list);
+	for (const KeyValue<String, Command> &E : commands) {
+		p_list->push_back(E.key);
+	}
 }
 
 void EditorCommandPalette::remove_command(String p_key_name) {
@@ -198,7 +218,7 @@ void EditorCommandPalette::add_command(String p_command_name, String p_key_name,
 	}
 	Command command;
 	command.name = p_command_name;
-	command.callable = p_action.bind(argptrs, arguments.size());
+	command.callable = p_action.bindp(argptrs, arguments.size());
 	command.shortcut = p_shortcut_text;
 
 	commands[p_key_name] = command;
@@ -224,22 +244,19 @@ void EditorCommandPalette::_add_command(String p_command_name, String p_key_name
 void EditorCommandPalette::execute_command(String &p_command_key) {
 	ERR_FAIL_COND_MSG(!commands.has(p_command_key), p_command_key + " not found.");
 	commands[p_command_key].last_used = OS::get_singleton()->get_unix_time();
-	commands[p_command_key].callable.call_deferred(nullptr, 0);
+	commands[p_command_key].callable.call_deferred();
 	_save_history();
 }
 
 void EditorCommandPalette::register_shortcuts_as_command() {
-	const String *key = nullptr;
-	key = unregistered_shortcuts.next(key);
-	while (key != nullptr) {
-		String command_name = unregistered_shortcuts[*key].first;
-		Ref<Shortcut> shortcut = unregistered_shortcuts[*key].second;
+	for (const KeyValue<String, Pair<String, Ref<Shortcut>>> &E : unregistered_shortcuts) {
+		String command_name = E.value.first;
+		Ref<Shortcut> shortcut = E.value.second;
 		Ref<InputEventShortcut> ev;
 		ev.instantiate();
 		ev->set_shortcut(shortcut);
 		String shortcut_text = String(shortcut->get_as_text());
-		add_command(command_name, *key, callable_mp(EditorNode::get_singleton()->get_viewport(), &Viewport::push_unhandled_input), varray(ev, false), shortcut_text);
-		key = unregistered_shortcuts.next(key);
+		add_command(command_name, E.key, callable_mp(EditorNode::get_singleton()->get_viewport(), &Viewport::push_unhandled_input), varray(ev, false), shortcut_text);
 	}
 	unregistered_shortcuts.clear();
 
@@ -276,12 +293,10 @@ void EditorCommandPalette::_theme_changed() {
 
 void EditorCommandPalette::_save_history() const {
 	Dictionary command_history;
-	List<String> command_keys;
-	commands.get_key_list(&command_keys);
 
-	for (const String &key : command_keys) {
-		if (commands[key].last_used > 0) {
-			command_history[key] = commands[key].last_used;
+	for (const KeyValue<String, Command> &E : commands) {
+		if (E.value.last_used > 0) {
+			command_history[E.key] = E.value.last_used;
 		}
 	}
 	EditorSettings::get_singleton()->set_project_metadata("command_palette", "command_history", command_history);
@@ -303,7 +318,7 @@ EditorCommandPalette::EditorCommandPalette() {
 	add_child(vbc);
 
 	command_search_box = memnew(LineEdit);
-	command_search_box->set_placeholder(TTR("Filter commands"));
+	command_search_box->set_placeholder(TTR("Filter Commands"));
 	command_search_box->connect("gui_input", callable_mp(this, &EditorCommandPalette::_sbox_input));
 	command_search_box->connect("text_changed", callable_mp(this, &EditorCommandPalette::_update_command_search));
 	command_search_box->set_v_size_flags(Control::SIZE_EXPAND_FILL);
@@ -315,8 +330,8 @@ EditorCommandPalette::EditorCommandPalette() {
 
 	search_options = memnew(Tree);
 	search_options->connect("item_activated", callable_mp(this, &EditorCommandPalette::_confirmed));
-	search_options->connect("item_selected", callable_mp((BaseButton *)get_ok_button(), &BaseButton::set_disabled), varray(false));
-	search_options->connect("nothing_selected", callable_mp((BaseButton *)get_ok_button(), &BaseButton::set_disabled), varray(true));
+	search_options->connect("item_selected", callable_mp((BaseButton *)get_ok_button(), &BaseButton::set_disabled).bind(false));
+	search_options->connect("nothing_selected", callable_mp((BaseButton *)get_ok_button(), &BaseButton::set_disabled).bind(true));
 	search_options->create_item();
 	search_options->set_hide_root(true);
 	search_options->set_columns(2);

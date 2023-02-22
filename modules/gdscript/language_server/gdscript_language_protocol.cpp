@@ -1,39 +1,41 @@
-/*************************************************************************/
-/*  gdscript_language_protocol.cpp                                       */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  gdscript_language_protocol.cpp                                        */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #include "gdscript_language_protocol.h"
 
 #include "core/config/project_settings.h"
 #include "editor/doc_tools.h"
+#include "editor/editor_help.h"
 #include "editor/editor_log.h"
 #include "editor/editor_node.h"
+#include "editor/editor_settings.h"
 
 GDScriptLanguageProtocol *GDScriptLanguageProtocol::singleton = nullptr;
 
@@ -115,7 +117,7 @@ Error GDScriptLanguageProtocol::LSPeer::send_data() {
 		// Response sent
 		if (res_sent >= c_res.size() - 1) {
 			res_sent = 0;
-			res_queue.remove(0);
+			res_queue.remove_at(0);
 		}
 	}
 	return OK;
@@ -126,7 +128,7 @@ Error GDScriptLanguageProtocol::on_client_connected() {
 	ERR_FAIL_COND_V_MSG(clients.size() >= LSP_MAX_CLIENTS, FAILED, "Max client limits reached");
 	Ref<LSPeer> peer = memnew(LSPeer);
 	peer->connection = tcp_peer;
-	clients.set(next_client_id, peer);
+	clients.insert(next_client_id, peer);
 	next_client_id++;
 	EditorNode::get_log()->add_message("[LSP] Connection Taken", EditorLog::MSG_TYPE_EDITOR);
 	return OK;
@@ -183,7 +185,9 @@ Dictionary GDScriptLanguageProtocol::initialize(const Dictionary &p_params) {
 	if (root_uri.length() && is_same_workspace) {
 		workspace->root_uri = root_uri;
 	} else {
-		workspace->root_uri = "file://" + workspace->root;
+		String r_root = workspace->root;
+		r_root = r_root.lstrip("/");
+		workspace->root_uri = "file:///" + r_root;
 
 		Dictionary params;
 		params["path"] = workspace->root;
@@ -229,28 +233,33 @@ void GDScriptLanguageProtocol::poll() {
 	if (server->is_connection_available()) {
 		on_client_connected();
 	}
-	const int *id = nullptr;
-	while ((id = clients.next(id))) {
-		Ref<LSPeer> peer = clients.get(*id);
+
+	HashMap<int, Ref<LSPeer>>::Iterator E = clients.begin();
+	while (E != clients.end()) {
+		Ref<LSPeer> peer = E->value;
 		StreamPeerTCP::Status status = peer->connection->get_status();
 		if (status == StreamPeerTCP::STATUS_NONE || status == StreamPeerTCP::STATUS_ERROR) {
-			on_client_disconnected(*id);
-			id = nullptr;
+			on_client_disconnected(E->key);
+			E = clients.begin();
+			continue;
 		} else {
 			if (peer->connection->get_available_bytes() > 0) {
-				latest_client_id = *id;
+				latest_client_id = E->key;
 				Error err = peer->handle_data();
 				if (err != OK && err != ERR_BUSY) {
-					on_client_disconnected(*id);
-					id = nullptr;
+					on_client_disconnected(E->key);
+					E = clients.begin();
+					continue;
 				}
 			}
 			Error err = peer->send_data();
 			if (err != OK && err != ERR_BUSY) {
-				on_client_disconnected(*id);
-				id = nullptr;
+				on_client_disconnected(E->key);
+				E = clients.begin();
+				continue;
 			}
 		}
+		++E;
 	}
 }
 
@@ -259,9 +268,8 @@ Error GDScriptLanguageProtocol::start(int p_port, const IPAddress &p_bind_ip) {
 }
 
 void GDScriptLanguageProtocol::stop() {
-	const int *id = nullptr;
-	while ((id = clients.next(id))) {
-		Ref<LSPeer> peer = clients.get(*id);
+	for (const KeyValue<int, Ref<LSPeer>> &E : clients) {
+		Ref<LSPeer> peer = clients.get(E.key);
 		peer->connection->disconnect_from_host();
 	}
 

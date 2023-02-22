@@ -1,32 +1,32 @@
-/*************************************************************************/
-/*  physics_server_2d.h                                                  */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  physics_server_2d.h                                                   */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #ifndef PHYSICS_SERVER_2D_H
 #define PHYSICS_SERVER_2D_H
@@ -36,6 +36,8 @@
 #include "core/object/ref_counted.h"
 
 class PhysicsDirectSpaceState2D;
+template <typename T>
+class TypedArray;
 
 class PhysicsDirectBodyState2D : public Object {
 	GDCLASS(PhysicsDirectBodyState2D, Object);
@@ -49,6 +51,7 @@ public:
 	virtual real_t get_total_angular_damp() const = 0; // get density of this body space/area
 
 	virtual Vector2 get_center_of_mass() const = 0;
+	virtual Vector2 get_center_of_mass_local() const = 0;
 	virtual real_t get_inverse_mass() const = 0; // get the mass
 	virtual real_t get_inverse_inertia() const = 0; // get density of this body space
 
@@ -63,12 +66,23 @@ public:
 
 	virtual Vector2 get_velocity_at_local_position(const Vector2 &p_position) const = 0;
 
-	virtual void add_central_force(const Vector2 &p_force) = 0;
-	virtual void add_force(const Vector2 &p_force, const Vector2 &p_position = Vector2()) = 0;
-	virtual void add_torque(real_t p_torque) = 0;
 	virtual void apply_central_impulse(const Vector2 &p_impulse) = 0;
 	virtual void apply_torque_impulse(real_t p_torque) = 0;
 	virtual void apply_impulse(const Vector2 &p_impulse, const Vector2 &p_position = Vector2()) = 0;
+
+	virtual void apply_central_force(const Vector2 &p_force) = 0;
+	virtual void apply_force(const Vector2 &p_force, const Vector2 &p_position = Vector2()) = 0;
+	virtual void apply_torque(real_t p_torque) = 0;
+
+	virtual void add_constant_central_force(const Vector2 &p_force) = 0;
+	virtual void add_constant_force(const Vector2 &p_force, const Vector2 &p_position = Vector2()) = 0;
+	virtual void add_constant_torque(real_t p_torque) = 0;
+
+	virtual void set_constant_force(const Vector2 &p_force) = 0;
+	virtual Vector2 get_constant_force() const = 0;
+
+	virtual void set_constant_torque(real_t p_torque) = 0;
+	virtual real_t get_constant_torque() const = 0;
 
 	virtual void set_sleep_state(bool p_enable) = 0;
 	virtual bool is_sleeping() const = 0;
@@ -85,6 +99,7 @@ public:
 	virtual Object *get_contact_collider_object(int p_contact_idx) const;
 	virtual int get_contact_collider_shape(int p_contact_idx) const = 0;
 	virtual Vector2 get_contact_collider_velocity_at_position(int p_contact_idx) const = 0;
+	virtual Vector2 get_contact_impulse(int p_contact_idx) const = 0;
 
 	virtual real_t get_step() const = 0;
 	virtual void integrate_forces();
@@ -94,69 +109,36 @@ public:
 	PhysicsDirectBodyState2D();
 };
 
-//used for script
-class PhysicsShapeQueryParameters2D : public RefCounted {
-	GDCLASS(PhysicsShapeQueryParameters2D, RefCounted);
-	friend class PhysicsDirectSpaceState2D;
-
-	RES shape_ref;
-	RID shape;
-	Transform2D transform;
-	Vector2 motion;
-	real_t margin = 0.0;
-	Set<RID> exclude;
-	uint32_t collision_mask = UINT32_MAX;
-
-	bool collide_with_bodies = true;
-	bool collide_with_areas = false;
-
-protected:
-	static void _bind_methods();
-
-public:
-	void set_shape(const RES &p_shape_ref);
-	RES get_shape() const;
-	void set_shape_rid(const RID &p_shape);
-	RID get_shape_rid() const;
-
-	void set_transform(const Transform2D &p_transform);
-	Transform2D get_transform() const;
-
-	void set_motion(const Vector2 &p_motion);
-	Vector2 get_motion() const;
-
-	void set_margin(real_t p_margin);
-	real_t get_margin() const;
-
-	void set_collision_mask(uint32_t p_mask);
-	uint32_t get_collision_mask() const;
-
-	void set_collide_with_bodies(bool p_enable);
-	bool is_collide_with_bodies_enabled() const;
-
-	void set_collide_with_areas(bool p_enable);
-	bool is_collide_with_areas_enabled() const;
-
-	void set_exclude(const Vector<RID> &p_exclude);
-	Vector<RID> get_exclude() const;
-};
+class PhysicsRayQueryParameters2D;
+class PhysicsPointQueryParameters2D;
+class PhysicsShapeQueryParameters2D;
 
 class PhysicsDirectSpaceState2D : public Object {
 	GDCLASS(PhysicsDirectSpaceState2D, Object);
 
-	Dictionary _intersect_ray(const Vector2 &p_from, const Vector2 &p_to, const Vector<RID> &p_exclude = Vector<RID>(), uint32_t p_layers = 0, bool p_collide_with_bodies = true, bool p_collide_with_areas = false);
-	Array _intersect_point(const Vector2 &p_point, int p_max_results = 32, const Vector<RID> &p_exclude = Vector<RID>(), uint32_t p_layers = 0, bool p_collide_with_bodies = true, bool p_collide_with_areas = false);
-	Array _intersect_point_on_canvas(const Vector2 &p_point, ObjectID p_canvas_intance_id, int p_max_results = 32, const Vector<RID> &p_exclude = Vector<RID>(), uint32_t p_layers = 0, bool p_collide_with_bodies = true, bool p_collide_with_areas = false);
-	Array _intersect_point_impl(const Vector2 &p_point, int p_max_results, const Vector<RID> &p_exclud, uint32_t p_layers, bool p_collide_with_bodies, bool p_collide_with_areas, bool p_filter_by_canvas = false, ObjectID p_canvas_instance_id = ObjectID());
-	Array _intersect_shape(const Ref<PhysicsShapeQueryParameters2D> &p_shape_query, int p_max_results = 32);
-	Array _cast_motion(const Ref<PhysicsShapeQueryParameters2D> &p_shape_query);
-	Array _collide_shape(const Ref<PhysicsShapeQueryParameters2D> &p_shape_query, int p_max_results = 32);
+	Dictionary _intersect_ray(const Ref<PhysicsRayQueryParameters2D> &p_ray_query);
+	TypedArray<Dictionary> _intersect_point(const Ref<PhysicsPointQueryParameters2D> &p_point_query, int p_max_results = 32);
+	TypedArray<Dictionary> _intersect_shape(const Ref<PhysicsShapeQueryParameters2D> &p_shape_query, int p_max_results = 32);
+	Vector<real_t> _cast_motion(const Ref<PhysicsShapeQueryParameters2D> &p_shape_query);
+	TypedArray<PackedVector2Array> _collide_shape(const Ref<PhysicsShapeQueryParameters2D> &p_shape_query, int p_max_results = 32);
 	Dictionary _get_rest_info(const Ref<PhysicsShapeQueryParameters2D> &p_shape_query);
 
 protected:
 	static void _bind_methods();
 
 public:
+	struct RayParameters {
+		Vector2 from;
+		Vector2 to;
+		HashSet<RID> exclude;
+		uint32_t collision_mask = UINT32_MAX;
+
+		bool collide_with_bodies = true;
+		bool collide_with_areas = false;
+
+		bool hit_from_inside = false;
+	};
+
 	struct RayResult {
 		Vector2 position;
 		Vector2 normal;
@@ -166,7 +148,7 @@ public:
 		int shape = 0;
 	};
 
-	virtual bool intersect_ray(const Vector2 &p_from, const Vector2 &p_to, RayResult &r_result, const Set<RID> &p_exclude = Set<RID>(), uint32_t p_collision_layer = UINT32_MAX, bool p_collide_with_bodies = true, bool p_collide_with_areas = false) = 0;
+	virtual bool intersect_ray(const RayParameters &p_parameters, RayResult &r_result) = 0;
 
 	struct ShapeResult {
 		RID rid;
@@ -175,14 +157,31 @@ public:
 		int shape = 0;
 	};
 
-	virtual int intersect_point(const Vector2 &p_point, ShapeResult *r_results, int p_result_max, const Set<RID> &p_exclude = Set<RID>(), uint32_t p_collision_layer = UINT32_MAX, bool p_collide_with_bodies = true, bool p_collide_with_areas = false, bool p_pick_point = false) = 0;
-	virtual int intersect_point_on_canvas(const Vector2 &p_point, ObjectID p_canvas_instance_id, ShapeResult *r_results, int p_result_max, const Set<RID> &p_exclude = Set<RID>(), uint32_t p_collision_layer = UINT32_MAX, bool p_collide_with_bodies = true, bool p_collide_with_areas = false, bool p_pick_point = false) = 0;
+	struct PointParameters {
+		Vector2 position;
+		ObjectID canvas_instance_id;
+		HashSet<RID> exclude;
+		uint32_t collision_mask = UINT32_MAX;
 
-	virtual int intersect_shape(const RID &p_shape, const Transform2D &p_xform, const Vector2 &p_motion, real_t p_margin, ShapeResult *r_results, int p_result_max, const Set<RID> &p_exclude = Set<RID>(), uint32_t p_collision_layer = UINT32_MAX, bool p_collide_with_bodies = true, bool p_collide_with_areas = false) = 0;
+		bool collide_with_bodies = true;
+		bool collide_with_areas = false;
 
-	virtual bool cast_motion(const RID &p_shape, const Transform2D &p_xform, const Vector2 &p_motion, real_t p_margin, real_t &p_closest_safe, real_t &p_closest_unsafe, const Set<RID> &p_exclude = Set<RID>(), uint32_t p_collision_layer = UINT32_MAX, bool p_collide_with_bodies = true, bool p_collide_with_areas = false) = 0;
+		bool pick_point = false;
+	};
 
-	virtual bool collide_shape(RID p_shape, const Transform2D &p_shape_xform, const Vector2 &p_motion, real_t p_margin, Vector2 *r_results, int p_result_max, int &r_result_count, const Set<RID> &p_exclude = Set<RID>(), uint32_t p_collision_layer = UINT32_MAX, bool p_collide_with_bodies = true, bool p_collide_with_areas = false) = 0;
+	virtual int intersect_point(const PointParameters &p_parameters, ShapeResult *r_results, int p_result_max) = 0;
+
+	struct ShapeParameters {
+		RID shape_rid;
+		Transform2D transform;
+		Vector2 motion;
+		real_t margin = 0.0;
+		HashSet<RID> exclude;
+		uint32_t collision_mask = UINT32_MAX;
+
+		bool collide_with_bodies = true;
+		bool collide_with_areas = false;
+	};
 
 	struct ShapeRestInfo {
 		Vector2 point;
@@ -190,10 +189,13 @@ public:
 		RID rid;
 		ObjectID collider_id;
 		int shape = 0;
-		Vector2 linear_velocity; //velocity at contact point
+		Vector2 linear_velocity; // Velocity at contact point.
 	};
 
-	virtual bool rest_info(RID p_shape, const Transform2D &p_shape_xform, const Vector2 &p_motion, real_t p_margin, ShapeRestInfo *r_info, const Set<RID> &p_exclude = Set<RID>(), uint32_t p_collision_layer = UINT32_MAX, bool p_collide_with_bodies = true, bool p_collide_with_areas = false) = 0;
+	virtual int intersect_shape(const ShapeParameters &p_parameters, ShapeResult *r_results, int p_result_max) = 0;
+	virtual bool cast_motion(const ShapeParameters &p_parameters, real_t &p_closest_safe, real_t &p_closest_unsafe) = 0;
+	virtual bool collide_shape(const ShapeParameters &p_parameters, Vector2 *r_results, int p_result_max, int &r_result_count) = 0;
+	virtual bool rest_info(const ShapeParameters &p_parameters, ShapeRestInfo *r_info) = 0;
 
 	PhysicsDirectSpaceState2D();
 };
@@ -254,11 +256,13 @@ public:
 	enum SpaceParameter {
 		SPACE_PARAM_CONTACT_RECYCLE_RADIUS,
 		SPACE_PARAM_CONTACT_MAX_SEPARATION,
-		SPACE_PARAM_BODY_MAX_ALLOWED_PENETRATION,
+		SPACE_PARAM_CONTACT_MAX_ALLOWED_PENETRATION,
+		SPACE_PARAM_CONTACT_DEFAULT_BIAS,
 		SPACE_PARAM_BODY_LINEAR_VELOCITY_SLEEP_THRESHOLD,
 		SPACE_PARAM_BODY_ANGULAR_VELOCITY_SLEEP_THRESHOLD,
 		SPACE_PARAM_BODY_TIME_TO_SLEEP,
 		SPACE_PARAM_CONSTRAINT_DEFAULT_BIAS,
+		SPACE_PARAM_SOLVER_ITERATIONS,
 	};
 
 	virtual void space_set_param(RID p_space, SpaceParameter p_param, real_t p_value) = 0;
@@ -278,12 +282,14 @@ public:
 	//missing attenuation? missing better override?
 
 	enum AreaParameter {
+		AREA_PARAM_GRAVITY_OVERRIDE_MODE,
 		AREA_PARAM_GRAVITY,
 		AREA_PARAM_GRAVITY_VECTOR,
 		AREA_PARAM_GRAVITY_IS_POINT,
-		AREA_PARAM_GRAVITY_DISTANCE_SCALE,
-		AREA_PARAM_GRAVITY_POINT_ATTENUATION,
+		AREA_PARAM_GRAVITY_POINT_UNIT_DISTANCE,
+		AREA_PARAM_LINEAR_DAMP_OVERRIDE_MODE,
 		AREA_PARAM_LINEAR_DAMP,
+		AREA_PARAM_ANGULAR_DAMP_OVERRIDE_MODE,
 		AREA_PARAM_ANGULAR_DAMP,
 		AREA_PARAM_PRIORITY
 	};
@@ -300,9 +306,6 @@ public:
 		AREA_SPACE_OVERRIDE_REPLACE,
 		AREA_SPACE_OVERRIDE_REPLACE_COMBINE // Discards all previous calculations, then keeps combining
 	};
-
-	virtual void area_set_space_override_mode(RID p_area, AreaSpaceOverrideMode p_mode) = 0;
-	virtual AreaSpaceOverrideMode area_get_space_override_mode(RID p_area) const = 0;
 
 	virtual void area_add_shape(RID p_area, RID p_shape, const Transform2D &p_transform = Transform2D(), bool p_disabled = false) = 0;
 	virtual void area_set_shape(RID p_area, int p_shape_idx, RID p_shape) = 0;
@@ -329,14 +332,17 @@ public:
 	virtual Variant area_get_param(RID p_parea, AreaParameter p_param) const = 0;
 	virtual Transform2D area_get_transform(RID p_area) const = 0;
 
-	virtual void area_set_collision_mask(RID p_area, uint32_t p_mask) = 0;
 	virtual void area_set_collision_layer(RID p_area, uint32_t p_layer) = 0;
+	virtual uint32_t area_get_collision_layer(RID p_area) const = 0;
+
+	virtual void area_set_collision_mask(RID p_area, uint32_t p_mask) = 0;
+	virtual uint32_t area_get_collision_mask(RID p_area) const = 0;
 
 	virtual void area_set_monitorable(RID p_area, bool p_monitorable) = 0;
 	virtual void area_set_pickable(RID p_area, bool p_pickable) = 0;
 
-	virtual void area_set_monitor_callback(RID p_area, Object *p_receiver, const StringName &p_method) = 0;
-	virtual void area_set_area_monitor_callback(RID p_area, Object *p_receiver, const StringName &p_method) = 0;
+	virtual void area_set_monitor_callback(RID p_area, const Callable &p_callback) = 0;
+	virtual void area_set_area_monitor_callback(RID p_area, const Callable &p_callback) = 0;
 
 	/* BODY API */
 
@@ -345,8 +351,8 @@ public:
 	enum BodyMode {
 		BODY_MODE_STATIC,
 		BODY_MODE_KINEMATIC,
-		BODY_MODE_DYNAMIC,
-		BODY_MODE_DYNAMIC_LINEAR,
+		BODY_MODE_RIGID,
+		BODY_MODE_RIGID_LINEAR,
 	};
 
 	virtual RID body_create() = 0;
@@ -392,6 +398,9 @@ public:
 	virtual void body_set_collision_mask(RID p_body, uint32_t p_mask) = 0;
 	virtual uint32_t body_get_collision_mask(RID p_body) const = 0;
 
+	virtual void body_set_collision_priority(RID p_body, real_t p_priority) = 0;
+	virtual real_t body_get_collision_priority(RID p_body) const = 0;
+
 	// common body variables
 	enum BodyParameter {
 		BODY_PARAM_BOUNCE,
@@ -400,9 +409,16 @@ public:
 		BODY_PARAM_INERTIA,
 		BODY_PARAM_CENTER_OF_MASS,
 		BODY_PARAM_GRAVITY_SCALE,
+		BODY_PARAM_LINEAR_DAMP_MODE,
+		BODY_PARAM_ANGULAR_DAMP_MODE,
 		BODY_PARAM_LINEAR_DAMP,
 		BODY_PARAM_ANGULAR_DAMP,
 		BODY_PARAM_MAX,
+	};
+
+	enum BodyDampMode {
+		BODY_DAMP_MODE_COMBINE,
+		BODY_DAMP_MODE_REPLACE,
 	};
 
 	virtual void body_set_param(RID p_body, BodyParameter p_param, const Variant &p_value) = 0;
@@ -422,20 +438,24 @@ public:
 	virtual void body_set_state(RID p_body, BodyState p_state, const Variant &p_variant) = 0;
 	virtual Variant body_get_state(RID p_body, BodyState p_state) const = 0;
 
-	//do something about it
-	virtual void body_set_applied_force(RID p_body, const Vector2 &p_force) = 0;
-	virtual Vector2 body_get_applied_force(RID p_body) const = 0;
-
-	virtual void body_set_applied_torque(RID p_body, real_t p_torque) = 0;
-	virtual real_t body_get_applied_torque(RID p_body) const = 0;
-
-	virtual void body_add_central_force(RID p_body, const Vector2 &p_force) = 0;
-	virtual void body_add_force(RID p_body, const Vector2 &p_force, const Vector2 &p_position = Vector2()) = 0;
-	virtual void body_add_torque(RID p_body, real_t p_torque) = 0;
-
 	virtual void body_apply_central_impulse(RID p_body, const Vector2 &p_impulse) = 0;
 	virtual void body_apply_torque_impulse(RID p_body, real_t p_torque) = 0;
 	virtual void body_apply_impulse(RID p_body, const Vector2 &p_impulse, const Vector2 &p_position = Vector2()) = 0;
+
+	virtual void body_apply_central_force(RID p_body, const Vector2 &p_force) = 0;
+	virtual void body_apply_force(RID p_body, const Vector2 &p_force, const Vector2 &p_position = Vector2()) = 0;
+	virtual void body_apply_torque(RID p_body, real_t p_torque) = 0;
+
+	virtual void body_add_constant_central_force(RID p_body, const Vector2 &p_force) = 0;
+	virtual void body_add_constant_force(RID p_body, const Vector2 &p_force, const Vector2 &p_position = Vector2()) = 0;
+	virtual void body_add_constant_torque(RID p_body, real_t p_torque) = 0;
+
+	virtual void body_set_constant_force(RID p_body, const Vector2 &p_force) = 0;
+	virtual Vector2 body_get_constant_force(RID p_body) const = 0;
+
+	virtual void body_set_constant_torque(RID p_body, real_t p_torque) = 0;
+	virtual real_t body_get_constant_torque(RID p_body) const = 0;
+
 	virtual void body_set_axis_velocity(RID p_body, const Vector2 &p_axis_velocity) = 0;
 
 	//fix
@@ -453,10 +473,7 @@ public:
 	virtual void body_set_omit_force_integration(RID p_body, bool p_omit) = 0;
 	virtual bool body_is_omitting_force_integration(RID p_body) const = 0;
 
-	// Callback for C++ use only.
-	typedef void (*BodyStateCallback)(void *p_instance, PhysicsDirectBodyState2D *p_state);
-	virtual void body_set_state_sync_callback(RID p_body, void *p_instance, BodyStateCallback p_callback) = 0;
-
+	virtual void body_set_state_sync_callback(RID p_body, const Callable &p_callable) = 0;
 	virtual void body_set_force_integration_callback(RID p_body, const Callable &p_callable, const Variant &p_udata = Variant()) = 0;
 
 	virtual bool body_collide_shape(RID p_body, int p_body_shape, RID p_shape, const Transform2D &p_shape_xform, const Vector2 &p_motion, Vector2 *r_results, int p_result_max, int &r_result_count) = 0;
@@ -471,8 +488,9 @@ public:
 		Vector2 motion;
 		real_t margin = 0.08;
 		bool collide_separation_ray = false;
-		Set<RID> exclude_bodies;
-		Set<ObjectID> exclude_objects;
+		HashSet<RID> exclude_bodies;
+		HashSet<ObjectID> exclude_objects;
+		bool recovery_as_collision = false;
 
 		MotionParameters() {}
 
@@ -571,8 +589,6 @@ public:
 
 	virtual bool is_flushing_queries() const = 0;
 
-	virtual void set_collision_iterations(int p_iterations) = 0;
-
 	enum ProcessInfo {
 		INFO_ACTIVE_OBJECTS,
 		INFO_COLLISION_PAIRS,
@@ -583,6 +599,111 @@ public:
 
 	PhysicsServer2D();
 	~PhysicsServer2D();
+};
+
+class PhysicsRayQueryParameters2D : public RefCounted {
+	GDCLASS(PhysicsRayQueryParameters2D, RefCounted);
+
+	PhysicsDirectSpaceState2D::RayParameters parameters;
+
+protected:
+	static void _bind_methods();
+
+public:
+	static Ref<PhysicsRayQueryParameters2D> create(Vector2 p_from, Vector2 p_to, uint32_t p_mask, const TypedArray<RID> &p_exclude);
+	const PhysicsDirectSpaceState2D::RayParameters &get_parameters() const { return parameters; }
+
+	void set_from(const Vector2 &p_from) { parameters.from = p_from; }
+	const Vector2 &get_from() const { return parameters.from; }
+
+	void set_to(const Vector2 &p_to) { parameters.to = p_to; }
+	const Vector2 &get_to() const { return parameters.to; }
+
+	void set_collision_mask(uint32_t p_mask) { parameters.collision_mask = p_mask; }
+	uint32_t get_collision_mask() const { return parameters.collision_mask; }
+
+	void set_collide_with_bodies(bool p_enable) { parameters.collide_with_bodies = p_enable; }
+	bool is_collide_with_bodies_enabled() const { return parameters.collide_with_bodies; }
+
+	void set_collide_with_areas(bool p_enable) { parameters.collide_with_areas = p_enable; }
+	bool is_collide_with_areas_enabled() const { return parameters.collide_with_areas; }
+
+	void set_hit_from_inside(bool p_enable) { parameters.hit_from_inside = p_enable; }
+	bool is_hit_from_inside_enabled() const { return parameters.hit_from_inside; }
+
+	void set_exclude(const TypedArray<RID> &p_exclude);
+	TypedArray<RID> get_exclude() const;
+};
+
+class PhysicsPointQueryParameters2D : public RefCounted {
+	GDCLASS(PhysicsPointQueryParameters2D, RefCounted);
+
+	PhysicsDirectSpaceState2D::PointParameters parameters;
+
+protected:
+	static void _bind_methods();
+
+public:
+	const PhysicsDirectSpaceState2D::PointParameters &get_parameters() const { return parameters; }
+
+	void set_position(const Vector2 &p_position) { parameters.position = p_position; }
+	const Vector2 &get_position() const { return parameters.position; }
+
+	void set_canvas_instance_id(ObjectID p_canvas_instance_id) { parameters.canvas_instance_id = p_canvas_instance_id; }
+	ObjectID get_canvas_instance_id() const { return parameters.canvas_instance_id; }
+
+	void set_collision_mask(uint32_t p_mask) { parameters.collision_mask = p_mask; }
+	uint32_t get_collision_mask() const { return parameters.collision_mask; }
+
+	void set_collide_with_bodies(bool p_enable) { parameters.collide_with_bodies = p_enable; }
+	bool is_collide_with_bodies_enabled() const { return parameters.collide_with_bodies; }
+
+	void set_collide_with_areas(bool p_enable) { parameters.collide_with_areas = p_enable; }
+	bool is_collide_with_areas_enabled() const { return parameters.collide_with_areas; }
+
+	void set_exclude(const TypedArray<RID> &p_exclude);
+	TypedArray<RID> get_exclude() const;
+};
+
+class PhysicsShapeQueryParameters2D : public RefCounted {
+	GDCLASS(PhysicsShapeQueryParameters2D, RefCounted);
+
+	PhysicsDirectSpaceState2D::ShapeParameters parameters;
+
+	Ref<Resource> shape_ref;
+
+protected:
+	static void _bind_methods();
+
+public:
+	const PhysicsDirectSpaceState2D::ShapeParameters &get_parameters() const { return parameters; }
+
+	void set_shape(const Ref<Resource> &p_shape_ref);
+	Ref<Resource> get_shape() const { return shape_ref; }
+
+	void set_shape_rid(const RID &p_shape);
+	RID get_shape_rid() const { return parameters.shape_rid; }
+
+	void set_transform(const Transform2D &p_transform) { parameters.transform = p_transform; }
+	const Transform2D &get_transform() const { return parameters.transform; }
+
+	void set_motion(const Vector2 &p_motion) { parameters.motion = p_motion; }
+	const Vector2 &get_motion() const { return parameters.motion; }
+
+	void set_margin(real_t p_margin) { parameters.margin = p_margin; }
+	real_t get_margin() const { return parameters.margin; }
+
+	void set_collision_mask(uint32_t p_mask) { parameters.collision_mask = p_mask; }
+	uint32_t get_collision_mask() const { return parameters.collision_mask; }
+
+	void set_collide_with_bodies(bool p_enable) { parameters.collide_with_bodies = p_enable; }
+	bool is_collide_with_bodies_enabled() const { return parameters.collide_with_bodies; }
+
+	void set_collide_with_areas(bool p_enable) { parameters.collide_with_areas = p_enable; }
+	bool is_collide_with_areas_enabled() const { return parameters.collide_with_areas; }
+
+	void set_exclude(const TypedArray<RID> &p_exclude);
+	TypedArray<RID> get_exclude() const;
 };
 
 class PhysicsTestMotionParameters2D : public RefCounted {
@@ -608,11 +729,14 @@ public:
 	bool is_collide_separation_ray_enabled() const { return parameters.collide_separation_ray; }
 	void set_collide_separation_ray_enabled(bool p_enabled) { parameters.collide_separation_ray = p_enabled; }
 
-	Vector<RID> get_exclude_bodies() const;
-	void set_exclude_bodies(const Vector<RID> &p_exclude);
+	TypedArray<RID> get_exclude_bodies() const;
+	void set_exclude_bodies(const TypedArray<RID> &p_exclude);
 
-	Array get_exclude_objects() const;
-	void set_exclude_objects(const Array &p_exclude);
+	TypedArray<uint64_t> get_exclude_objects() const;
+	void set_exclude_objects(const TypedArray<uint64_t> &p_exclude);
+
+	bool is_recovery_as_collision_enabled() const { return parameters.recovery_as_collision; }
+	void set_recovery_as_collision_enabled(bool p_enabled) { parameters.recovery_as_collision = p_enabled; }
 };
 
 class PhysicsTestMotionResult2D : public RefCounted {
@@ -642,16 +766,18 @@ public:
 	real_t get_collision_unsafe_fraction() const;
 };
 
-typedef PhysicsServer2D *(*CreatePhysicsServer2DCallback)();
+class PhysicsServer2DManager : public Object {
+	GDCLASS(PhysicsServer2DManager, Object);
 
-class PhysicsServer2DManager {
+	static PhysicsServer2DManager *singleton;
+
 	struct ClassInfo {
 		String name;
-		CreatePhysicsServer2DCallback create_callback = nullptr;
+		Callable create_callback;
 
 		ClassInfo() {}
 
-		ClassInfo(String p_name, CreatePhysicsServer2DCallback p_create_callback) :
+		ClassInfo(String p_name, Callable p_create_callback) :
 				name(p_name),
 				create_callback(p_create_callback) {}
 
@@ -659,31 +785,36 @@ class PhysicsServer2DManager {
 				name(p_ci.name),
 				create_callback(p_ci.create_callback) {}
 
-		ClassInfo &operator=(const ClassInfo &p_ci) {
+		void operator=(const ClassInfo &p_ci) {
 			name = p_ci.name;
 			create_callback = p_ci.create_callback;
-			return *this;
 		}
 	};
 
-	static Vector<ClassInfo> physics_2d_servers;
-	static int default_server_id;
-	static int default_server_priority;
+	Vector<ClassInfo> physics_2d_servers;
+	int default_server_id = -1;
+	int default_server_priority = -1;
+
+	void on_servers_changed();
+
+protected:
+	static void _bind_methods();
 
 public:
 	static const String setting_property_name;
 
-private:
-	static void on_servers_changed();
+	static PhysicsServer2DManager *get_singleton();
 
-public:
-	static void register_server(const String &p_name, CreatePhysicsServer2DCallback p_creat_callback);
-	static void set_default_server(const String &p_name, int p_priority = 0);
-	static int find_server_id(const String &p_name);
-	static int get_servers_count();
-	static String get_server_name(int p_id);
-	static PhysicsServer2D *new_default_server();
-	static PhysicsServer2D *new_server(const String &p_name);
+	void register_server(const String &p_name, const Callable &p_create_callback);
+	void set_default_server(const String &p_name, int p_priority = 0);
+	int find_server_id(const String &p_name);
+	int get_servers_count();
+	String get_server_name(int p_id);
+	PhysicsServer2D *new_default_server();
+	PhysicsServer2D *new_server(const String &p_name);
+
+	PhysicsServer2DManager();
+	~PhysicsServer2DManager();
 };
 
 VARIANT_ENUM_CAST(PhysicsServer2D::ShapeType);
@@ -692,12 +823,13 @@ VARIANT_ENUM_CAST(PhysicsServer2D::AreaParameter);
 VARIANT_ENUM_CAST(PhysicsServer2D::AreaSpaceOverrideMode);
 VARIANT_ENUM_CAST(PhysicsServer2D::BodyMode);
 VARIANT_ENUM_CAST(PhysicsServer2D::BodyParameter);
+VARIANT_ENUM_CAST(PhysicsServer2D::BodyDampMode);
 VARIANT_ENUM_CAST(PhysicsServer2D::BodyState);
 VARIANT_ENUM_CAST(PhysicsServer2D::CCDMode);
 VARIANT_ENUM_CAST(PhysicsServer2D::JointParam);
 VARIANT_ENUM_CAST(PhysicsServer2D::JointType);
+VARIANT_ENUM_CAST(PhysicsServer2D::PinJointParam);
 VARIANT_ENUM_CAST(PhysicsServer2D::DampedSpringParam);
-//VARIANT_ENUM_CAST( PhysicsServer2D::ObjectType );
 VARIANT_ENUM_CAST(PhysicsServer2D::AreaBodyStatus);
 VARIANT_ENUM_CAST(PhysicsServer2D::ProcessInfo);
 

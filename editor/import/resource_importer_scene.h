@@ -1,42 +1,47 @@
-/*************************************************************************/
-/*  resource_importer_scene.h                                            */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  resource_importer_scene.h                                             */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
-#ifndef RESOURCEIMPORTERSCENE_H
-#define RESOURCEIMPORTERSCENE_H
+#ifndef RESOURCE_IMPORTER_SCENE_H
+#define RESOURCE_IMPORTER_SCENE_H
 
+#include "core/error/error_macros.h"
 #include "core/io/resource_importer.h"
-#include "scene/3d/node_3d.h"
+#include "core/variant/dictionary.h"
+#include "scene/3d/importer_mesh_instance_3d.h"
 #include "scene/resources/animation.h"
+#include "scene/resources/box_shape_3d.h"
+#include "scene/resources/capsule_shape_3d.h"
+#include "scene/resources/cylinder_shape_3d.h"
 #include "scene/resources/mesh.h"
 #include "scene/resources/shape_3d.h"
-#include "scene/resources/skin.h"
+#include "scene/resources/sphere_shape_3d.h"
 
 class Material;
 class AnimationPlayer;
@@ -48,13 +53,14 @@ class EditorSceneFormatImporter : public RefCounted {
 protected:
 	static void _bind_methods();
 
-	Node *import_scene_from_other_importer(const String &p_path, uint32_t p_flags, int p_bake_fps);
-	Ref<Animation> import_animation_from_other_importer(const String &p_path, uint32_t p_flags, int p_bake_fps);
+	Node *import_scene_wrapper(const String &p_path, uint32_t p_flags, Dictionary p_options);
+	Ref<Animation> import_animation_wrapper(const String &p_path, uint32_t p_flags, Dictionary p_options);
 
-	GDVIRTUAL0RC(int, _get_import_flags)
+	GDVIRTUAL0RC(uint32_t, _get_import_flags)
 	GDVIRTUAL0RC(Vector<String>, _get_extensions)
-	GDVIRTUAL3R(Object *, _import_scene, String, uint32_t, uint32_t)
-	GDVIRTUAL3R(Ref<Animation>, _import_animation, String, uint32_t, uint32_t)
+	GDVIRTUAL3R(Object *, _import_scene, String, uint32_t, Dictionary)
+	GDVIRTUAL1(_get_import_options, String)
+	GDVIRTUAL3RC(Variant, _get_option_visibility, String, bool, String)
 
 public:
 	enum ImportFlags {
@@ -63,12 +69,14 @@ public:
 		IMPORT_FAIL_ON_MISSING_DEPENDENCIES = 4,
 		IMPORT_GENERATE_TANGENT_ARRAYS = 8,
 		IMPORT_USE_NAMED_SKIN_BINDS = 16,
+		IMPORT_DISCARD_MESHES_AND_MATERIALS = 32, //used for optimizing animation import
 	};
 
 	virtual uint32_t get_import_flags() const;
 	virtual void get_extensions(List<String> *r_extensions) const;
-	virtual Node *import_scene(const String &p_path, uint32_t p_flags, int p_bake_fps, List<String> *r_missing_deps, Error *r_err = nullptr);
-	virtual Ref<Animation> import_animation(const String &p_path, uint32_t p_flags, int p_bake_fps);
+	virtual Node *import_scene(const String &p_path, uint32_t p_flags, const HashMap<StringName, Variant> &p_options, List<String> *r_missing_deps, Error *r_err = nullptr);
+	virtual void get_import_options(const String &p_path, List<ResourceImporter::ImportOption> *r_options);
+	virtual Variant get_option_visibility(const String &p_path, bool p_for_animation, const String &p_option, const HashMap<StringName, Variant> &p_options);
 
 	EditorSceneFormatImporter() {}
 };
@@ -101,22 +109,23 @@ public:
 		INTERNAL_IMPORT_CATEGORY_MATERIAL,
 		INTERNAL_IMPORT_CATEGORY_ANIMATION,
 		INTERNAL_IMPORT_CATEGORY_ANIMATION_NODE,
+		INTERNAL_IMPORT_CATEGORY_SKELETON_3D_NODE,
 		INTERNAL_IMPORT_CATEGORY_MAX
 	};
 
 private:
-	mutable const Map<StringName, Variant> *current_options = nullptr;
+	mutable const HashMap<StringName, Variant> *current_options = nullptr;
 	mutable const Dictionary *current_options_dict = nullptr;
 	List<ResourceImporter::ImportOption> *current_option_list = nullptr;
 	InternalImportCategory current_category = INTERNAL_IMPORT_CATEGORY_MAX;
 
 protected:
 	GDVIRTUAL1(_get_internal_import_options, int)
-	GDVIRTUAL2RC(Variant, _get_internal_option_visibility, int, String)
+	GDVIRTUAL3RC(Variant, _get_internal_option_visibility, int, bool, String)
 	GDVIRTUAL2RC(Variant, _get_internal_option_update_view_required, int, String)
-	GDVIRTUAL4(_internal_process, int, Node *, Node *, RES)
-	GDVIRTUAL0(_get_import_options)
-	GDVIRTUAL1RC(Variant, _get_option_visibility, String)
+	GDVIRTUAL4(_internal_process, int, Node *, Node *, Ref<Resource>)
+	GDVIRTUAL1(_get_import_options, String)
+	GDVIRTUAL3RC(Variant, _get_option_visibility, String, bool, String)
 	GDVIRTUAL1(_pre_process, Node *)
 	GDVIRTUAL1(_post_process, Node *)
 
@@ -128,16 +137,16 @@ public:
 	void add_import_option_advanced(Variant::Type p_type, const String &p_name, Variant p_default_value, PropertyHint p_hint = PROPERTY_HINT_NONE, const String &p_hint_string = String(), int p_usage_flags = PROPERTY_USAGE_DEFAULT);
 
 	virtual void get_internal_import_options(InternalImportCategory p_category, List<ResourceImporter::ImportOption> *r_options);
-	virtual Variant get_internal_option_visibility(InternalImportCategory p_category, const String &p_option, const Map<StringName, Variant> &p_options) const;
-	virtual Variant get_internal_option_update_view_required(InternalImportCategory p_category, const String &p_option, const Map<StringName, Variant> &p_options) const;
+	virtual Variant get_internal_option_visibility(InternalImportCategory p_category, bool p_for_animation, const String &p_option, const HashMap<StringName, Variant> &p_options) const;
+	virtual Variant get_internal_option_update_view_required(InternalImportCategory p_category, const String &p_option, const HashMap<StringName, Variant> &p_options) const;
 
-	virtual void internal_process(InternalImportCategory p_category, Node *p_base_scene, Node *p_node, RES p_resource, const Dictionary &p_options);
+	virtual void internal_process(InternalImportCategory p_category, Node *p_base_scene, Node *p_node, Ref<Resource> p_resource, const Dictionary &p_options);
 
-	virtual void get_import_options(List<ResourceImporter::ImportOption> *r_options);
-	virtual Variant get_option_visibility(const String &p_option, const Map<StringName, Variant> &p_options) const;
+	virtual void get_import_options(const String &p_path, List<ResourceImporter::ImportOption> *r_options);
+	virtual Variant get_option_visibility(const String &p_path, bool p_for_animation, const String &p_option, const HashMap<StringName, Variant> &p_options) const;
 
-	virtual void pre_process(Node *p_scene, const Map<StringName, Variant> &p_options);
-	virtual void post_process(Node *p_scene, const Map<StringName, Variant> &p_options);
+	virtual void pre_process(Node *p_scene, const HashMap<StringName, Variant> &p_options);
+	virtual void post_process(Node *p_scene, const HashMap<StringName, Variant> &p_options);
 
 	EditorScenePostImportPlugin() {}
 };
@@ -147,15 +156,17 @@ VARIANT_ENUM_CAST(EditorScenePostImportPlugin::InternalImportCategory)
 class ResourceImporterScene : public ResourceImporter {
 	GDCLASS(ResourceImporterScene, ResourceImporter);
 
-	Set<Ref<EditorSceneFormatImporter>> importers;
+	static Vector<Ref<EditorSceneFormatImporter>> importers;
+	static Vector<Ref<EditorScenePostImportPlugin>> post_importer_plugins;
 
-	static ResourceImporterScene *singleton;
+	static ResourceImporterScene *scene_singleton;
+	static ResourceImporterScene *animation_singleton;
 
 	enum LightBakeMode {
 		LIGHT_BAKE_DISABLED,
-		LIGHT_BAKE_DYNAMIC,
 		LIGHT_BAKE_STATIC,
-		LIGHT_BAKE_STATIC_LIGHTMAPS
+		LIGHT_BAKE_STATIC_LIGHTMAPS,
+		LIGHT_BAKE_DYNAMIC,
 	};
 
 	enum MeshPhysicsMode {
@@ -170,6 +181,12 @@ class ResourceImporterScene : public ResourceImporter {
 		NAVMESH_DISABLED,
 		NAVMESH_MESH_AND_NAVMESH,
 		NAVMESH_NAVMESH_ONLY,
+	};
+
+	enum OccluderMode {
+		OCCLUDER_DISABLED,
+		OCCLUDER_MESH_AND_OCCLUDER,
+		OCCLUDER_OCCLUDER_ONLY,
 	};
 
 	enum MeshOverride {
@@ -194,6 +211,7 @@ class ResourceImporterScene : public ResourceImporter {
 		SHAPE_TYPE_CAPSULE,
 	};
 
+	Array _get_skinned_pose_transforms(ImporterMeshInstance3D *p_src_mesh_node);
 	void _replace_owner(Node *p_node, Node *p_scene, Node *p_new_owner);
 	void _generate_meshes(Node *p_node, const Dictionary &p_mesh_data, bool p_generate_lods, bool p_create_shadow_meshes, LightBakeMode p_light_bake_mode, float p_lightmap_texel_size, const Vector<uint8_t> &p_src_lightmap_cache, Vector<Vector<uint8_t>> &r_lightmap_caches);
 	void _add_shapes(Node *p_node, const Vector<Ref<Shape3D>> &p_shapes);
@@ -213,18 +231,21 @@ class ResourceImporterScene : public ResourceImporter {
 
 	void _optimize_track_usage(AnimationPlayer *p_player, AnimationImportTracks *p_track_actions);
 
-	mutable Vector<Ref<EditorScenePostImportPlugin>> post_importer_plugins;
+	bool animation_importer = false;
 
 public:
-	static ResourceImporterScene *get_singleton() { return singleton; }
+	static ResourceImporterScene *get_scene_singleton() { return scene_singleton; }
+	static ResourceImporterScene *get_animation_singleton() { return animation_singleton; }
 
-	void add_post_importer_plugin(const Ref<EditorScenePostImportPlugin> &p_plugin) { post_importer_plugins.push_back(p_plugin); }
-	void remove_post_importer_plugin(const Ref<EditorScenePostImportPlugin> &p_plugin) { post_importer_plugins.erase(p_plugin); }
+	static void add_post_importer_plugin(const Ref<EditorScenePostImportPlugin> &p_plugin, bool p_first_priority = false);
+	static void remove_post_importer_plugin(const Ref<EditorScenePostImportPlugin> &p_plugin);
 
-	const Set<Ref<EditorSceneFormatImporter>> &get_importers() const { return importers; }
+	const Vector<Ref<EditorSceneFormatImporter>> &get_importers() const { return importers; }
 
-	void add_importer(Ref<EditorSceneFormatImporter> p_importer) { importers.insert(p_importer); }
-	void remove_importer(Ref<EditorSceneFormatImporter> p_importer) { importers.erase(p_importer); }
+	static void add_importer(Ref<EditorSceneFormatImporter> p_importer, bool p_first_priority = false);
+	static void remove_importer(Ref<EditorSceneFormatImporter> p_importer);
+
+	static void clean_up_importer_plugins();
 
 	virtual String get_importer_name() const override;
 	virtual String get_visible_name() const override;
@@ -243,40 +264,41 @@ public:
 		INTERNAL_IMPORT_CATEGORY_MATERIAL = EditorScenePostImportPlugin::INTERNAL_IMPORT_CATEGORY_MATERIAL,
 		INTERNAL_IMPORT_CATEGORY_ANIMATION = EditorScenePostImportPlugin::INTERNAL_IMPORT_CATEGORY_ANIMATION,
 		INTERNAL_IMPORT_CATEGORY_ANIMATION_NODE = EditorScenePostImportPlugin::INTERNAL_IMPORT_CATEGORY_ANIMATION_NODE,
+		INTERNAL_IMPORT_CATEGORY_SKELETON_3D_NODE = EditorScenePostImportPlugin::INTERNAL_IMPORT_CATEGORY_SKELETON_3D_NODE,
 		INTERNAL_IMPORT_CATEGORY_MAX = EditorScenePostImportPlugin::INTERNAL_IMPORT_CATEGORY_MAX
 	};
 
 	void get_internal_import_options(InternalImportCategory p_category, List<ImportOption> *r_options) const;
-	bool get_internal_option_visibility(InternalImportCategory p_category, const String &p_option, const Map<StringName, Variant> &p_options) const;
-	bool get_internal_option_update_view_required(InternalImportCategory p_category, const String &p_option, const Map<StringName, Variant> &p_options) const;
+	bool get_internal_option_visibility(InternalImportCategory p_category, const String &p_option, const HashMap<StringName, Variant> &p_options) const;
+	bool get_internal_option_update_view_required(InternalImportCategory p_category, const String &p_option, const HashMap<StringName, Variant> &p_options) const;
 
-	virtual void get_import_options(List<ImportOption> *r_options, int p_preset = 0) const override;
-	virtual bool get_option_visibility(const String &p_option, const Map<StringName, Variant> &p_options) const override;
+	virtual void get_import_options(const String &p_path, List<ImportOption> *r_options, int p_preset = 0) const override;
+	virtual bool get_option_visibility(const String &p_path, const String &p_option, const HashMap<StringName, Variant> &p_options) const override;
 	// Import scenes *after* everything else (such as textures).
 	virtual int get_import_order() const override { return ResourceImporter::IMPORT_ORDER_SCENE; }
 
-	Node *_pre_fix_node(Node *p_node, Node *p_root, Map<Ref<ImporterMesh>, Vector<Ref<Shape3D>>> &collision_map);
-	Node *_post_fix_node(Node *p_node, Node *p_root, Map<Ref<ImporterMesh>, Vector<Ref<Shape3D>>> &collision_map, Set<Ref<ImporterMesh>> &r_scanned_meshes, const Dictionary &p_node_data, const Dictionary &p_material_data, const Dictionary &p_animation_data, float p_animation_fps);
+	Node *_pre_fix_node(Node *p_node, Node *p_root, HashMap<Ref<ImporterMesh>, Vector<Ref<Shape3D>>> &r_collision_map, Pair<PackedVector3Array, PackedInt32Array> *r_occluder_arrays, List<Pair<NodePath, Node *>> &r_node_renames);
+	Node *_pre_fix_animations(Node *p_node, Node *p_root, const Dictionary &p_node_data, const Dictionary &p_animation_data, float p_animation_fps);
+	Node *_post_fix_node(Node *p_node, Node *p_root, HashMap<Ref<ImporterMesh>, Vector<Ref<Shape3D>>> &collision_map, Pair<PackedVector3Array, PackedInt32Array> &r_occluder_arrays, HashSet<Ref<ImporterMesh>> &r_scanned_meshes, const Dictionary &p_node_data, const Dictionary &p_material_data, const Dictionary &p_animation_data, float p_animation_fps, float p_applied_root_scale);
+	Node *_post_fix_animations(Node *p_node, Node *p_root, const Dictionary &p_node_data, const Dictionary &p_animation_data, float p_animation_fps);
 
 	Ref<Animation> _save_animation_to_file(Ref<Animation> anim, bool p_save_to_file, String p_save_to_path, bool p_keep_custom_tracks);
-	void _create_clips(AnimationPlayer *anim, const Array &p_clips, bool p_bake_all);
-	void _optimize_animations(AnimationPlayer *anim, float p_max_lin_error, float p_max_ang_error, float p_max_angle);
+	void _create_slices(AnimationPlayer *ap, Ref<Animation> anim, const Array &p_clips, bool p_bake_all);
+	void _optimize_animations(AnimationPlayer *anim, float p_max_vel_error, float p_max_ang_error, int p_prc_error);
+	void _compress_animations(AnimationPlayer *anim, int p_page_size_kb);
 
-	Node *pre_import(const String &p_source_file);
-	virtual Error import(const String &p_source_file, const String &p_save_path, const Map<StringName, Variant> &p_options, List<String> *r_platform_variants, List<String> *r_gen_files = nullptr, Variant *r_metadata = nullptr) override;
-
-	Node *import_scene_from_other_importer(EditorSceneFormatImporter *p_exception, const String &p_path, uint32_t p_flags, int p_bake_fps);
-	Ref<Animation> import_animation_from_other_importer(EditorSceneFormatImporter *p_exception, const String &p_path, uint32_t p_flags, int p_bake_fps);
+	Node *pre_import(const String &p_source_file, const HashMap<StringName, Variant> &p_options);
+	virtual Error import(const String &p_source_file, const String &p_save_path, const HashMap<StringName, Variant> &p_options, List<String> *r_platform_variants, List<String> *r_gen_files = nullptr, Variant *r_metadata = nullptr) override;
 
 	virtual bool has_advanced_options() const override;
 	virtual void show_advanced_options(const String &p_path) override;
 
 	virtual bool can_import_threaded() const override { return false; }
 
-	ResourceImporterScene();
+	ResourceImporterScene(bool p_animation_import = false);
 
 	template <class M>
-	static Vector<Ref<Shape3D>> get_collision_shapes(const Ref<Mesh> &p_mesh, const M &p_options);
+	static Vector<Ref<Shape3D>> get_collision_shapes(const Ref<Mesh> &p_mesh, const M &p_options, float p_applied_root_scale);
 
 	template <class M>
 	static Transform3D get_collision_shapes_transform(const M &p_options);
@@ -288,17 +310,11 @@ class EditorSceneFormatImporterESCN : public EditorSceneFormatImporter {
 public:
 	virtual uint32_t get_import_flags() const override;
 	virtual void get_extensions(List<String> *r_extensions) const override;
-	virtual Node *import_scene(const String &p_path, uint32_t p_flags, int p_bake_fps, List<String> *r_missing_deps, Error *r_err = nullptr) override;
-	virtual Ref<Animation> import_animation(const String &p_path, uint32_t p_flags, int p_bake_fps) override;
+	virtual Node *import_scene(const String &p_path, uint32_t p_flags, const HashMap<StringName, Variant> &p_options, List<String> *r_missing_deps, Error *r_err = nullptr) override;
 };
 
-#include "scene/resources/box_shape_3d.h"
-#include "scene/resources/capsule_shape_3d.h"
-#include "scene/resources/cylinder_shape_3d.h"
-#include "scene/resources/sphere_shape_3d.h"
-
 template <class M>
-Vector<Ref<Shape3D>> ResourceImporterScene::get_collision_shapes(const Ref<Mesh> &p_mesh, const M &p_options) {
+Vector<Ref<Shape3D>> ResourceImporterScene::get_collision_shapes(const Ref<Mesh> &p_mesh, const M &p_options, float p_applied_root_scale) {
 	ShapeType generate_shape_type = SHAPE_TYPE_DECOMPOSE_CONVEX;
 	if (p_options.has(SNAME("physics/shape_type"))) {
 		generate_shape_type = (ShapeType)p_options[SNAME("physics/shape_type")].operator int();
@@ -393,7 +409,7 @@ Vector<Ref<Shape3D>> ResourceImporterScene::get_collision_shapes(const Ref<Mesh>
 		Ref<BoxShape3D> box;
 		box.instantiate();
 		if (p_options.has(SNAME("primitive/size"))) {
-			box->set_size(p_options[SNAME("primitive/size")]);
+			box->set_size(p_options[SNAME("primitive/size")].operator Vector3() * p_applied_root_scale);
 		}
 
 		Vector<Ref<Shape3D>> shapes;
@@ -404,7 +420,7 @@ Vector<Ref<Shape3D>> ResourceImporterScene::get_collision_shapes(const Ref<Mesh>
 		Ref<SphereShape3D> sphere;
 		sphere.instantiate();
 		if (p_options.has(SNAME("primitive/radius"))) {
-			sphere->set_radius(p_options[SNAME("primitive/radius")]);
+			sphere->set_radius(p_options[SNAME("primitive/radius")].operator float() * p_applied_root_scale);
 		}
 
 		Vector<Ref<Shape3D>> shapes;
@@ -414,10 +430,10 @@ Vector<Ref<Shape3D>> ResourceImporterScene::get_collision_shapes(const Ref<Mesh>
 		Ref<CylinderShape3D> cylinder;
 		cylinder.instantiate();
 		if (p_options.has(SNAME("primitive/height"))) {
-			cylinder->set_height(p_options[SNAME("primitive/height")]);
+			cylinder->set_height(p_options[SNAME("primitive/height")].operator float() * p_applied_root_scale);
 		}
 		if (p_options.has(SNAME("primitive/radius"))) {
-			cylinder->set_radius(p_options[SNAME("primitive/radius")]);
+			cylinder->set_radius(p_options[SNAME("primitive/radius")].operator float() * p_applied_root_scale);
 		}
 
 		Vector<Ref<Shape3D>> shapes;
@@ -427,10 +443,10 @@ Vector<Ref<Shape3D>> ResourceImporterScene::get_collision_shapes(const Ref<Mesh>
 		Ref<CapsuleShape3D> capsule;
 		capsule.instantiate();
 		if (p_options.has(SNAME("primitive/height"))) {
-			capsule->set_height(p_options[SNAME("primitive/height")]);
+			capsule->set_height(p_options[SNAME("primitive/height")].operator float() * p_applied_root_scale);
 		}
 		if (p_options.has(SNAME("primitive/radius"))) {
-			capsule->set_radius(p_options[SNAME("primitive/radius")]);
+			capsule->set_radius(p_options[SNAME("primitive/radius")].operator float() * p_applied_root_scale);
 		}
 
 		Vector<Ref<Shape3D>> shapes;
@@ -458,10 +474,10 @@ Transform3D ResourceImporterScene::get_collision_shapes_transform(const M &p_opt
 		}
 
 		if (p_options.has(SNAME("primitive/rotation"))) {
-			transform.basis.set_euler((p_options[SNAME("primitive/rotation")].operator Vector3() / 180.0) * Math_PI);
+			transform.basis = Basis::from_euler(p_options[SNAME("primitive/rotation")].operator Vector3() * (Math_PI / 180.0));
 		}
 	}
 	return transform;
 }
 
-#endif // RESOURCEIMPORTERSCENE_H
+#endif // RESOURCE_IMPORTER_SCENE_H

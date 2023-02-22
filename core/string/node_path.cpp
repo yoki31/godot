@@ -1,32 +1,32 @@
-/*************************************************************************/
-/*  node_path.cpp                                                        */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  node_path.cpp                                                         */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #include "node_path.h"
 
@@ -199,6 +199,21 @@ Vector<StringName> NodePath::get_subnames() const {
 	return Vector<StringName>();
 }
 
+StringName NodePath::get_concatenated_names() const {
+	ERR_FAIL_COND_V(!data, StringName());
+
+	if (!data->concatenated_path) {
+		int pc = data->path.size();
+		String concatenated;
+		const StringName *sn = data->path.ptr();
+		for (int i = 0; i < pc; i++) {
+			concatenated += i == 0 ? sn[i].operator String() : "/" + sn[i];
+		}
+		data->concatenated_path = concatenated;
+	}
+	return data->concatenated_path;
+}
+
 StringName NodePath::get_concatenated_subnames() const {
 	ERR_FAIL_COND_V(!data, StringName());
 
@@ -293,12 +308,12 @@ void NodePath::simplify() {
 			break;
 		}
 		if (data->path[i].operator String() == ".") {
-			data->path.remove(i);
+			data->path.remove_at(i);
 			i--;
 		} else if (i > 0 && data->path[i].operator String() == ".." && data->path[i - 1].operator String() != "." && data->path[i - 1].operator String() != "..") {
 			//remove both
-			data->path.remove(i - 1);
-			data->path.remove(i - 1);
+			data->path.remove_at(i - 1);
+			data->path.remove_at(i - 1);
 			i -= 2;
 			if (data->path.size() == 0) {
 				data->path.push_back(".");
@@ -324,7 +339,6 @@ NodePath::NodePath(const Vector<StringName> &p_path, bool p_absolute) {
 	data->refcount.init();
 	data->absolute = p_absolute;
 	data->path = p_path;
-	data->has_slashes = true;
 	data->hash_cache_valid = false;
 }
 
@@ -338,7 +352,6 @@ NodePath::NodePath(const Vector<StringName> &p_path, const Vector<StringName> &p
 	data->absolute = p_absolute;
 	data->path = p_path;
 	data->subpath = p_subpath;
-	data->has_slashes = true;
 	data->hash_cache_valid = false;
 }
 
@@ -358,7 +371,6 @@ NodePath::NodePath(const String &p_path) {
 
 	bool absolute = (path[0] == '/');
 	bool last_is_slash = true;
-	bool has_slashes = false;
 	int slices = 0;
 	int subpath_pos = path.find(":");
 
@@ -368,7 +380,7 @@ NodePath::NodePath(const String &p_path) {
 		for (int i = from; i <= path.length(); i++) {
 			if (path[i] == ':' || path[i] == 0) {
 				String str = path.substr(from, i - from);
-				if (str == "") {
+				if (str.is_empty()) {
 					if (path[i] == 0) {
 						continue; // Allow end-of-path :
 					}
@@ -387,7 +399,6 @@ NodePath::NodePath(const String &p_path) {
 	for (int i = (int)absolute; i < path.length(); i++) {
 		if (path[i] == '/') {
 			last_is_slash = true;
-			has_slashes = true;
 		} else {
 			if (last_is_slash) {
 				slices++;
@@ -404,7 +415,6 @@ NodePath::NodePath(const String &p_path) {
 	data = memnew(Data);
 	data->refcount.init();
 	data->absolute = absolute;
-	data->has_slashes = has_slashes;
 	data->subpath = subpath;
 	data->hash_cache_valid = false;
 

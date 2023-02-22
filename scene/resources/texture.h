@@ -1,32 +1,32 @@
-/*************************************************************************/
-/*  texture.h                                                            */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  texture.h                                                             */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #ifndef TEXTURE_H
 #define TEXTURE_H
@@ -57,14 +57,23 @@ class Texture2D : public Texture {
 protected:
 	static void _bind_methods();
 
+	GDVIRTUAL0RC(int, _get_width)
+	GDVIRTUAL0RC(int, _get_height)
+	GDVIRTUAL2RC(bool, _is_pixel_opaque, int, int)
+	GDVIRTUAL0RC(bool, _has_alpha)
+
+	GDVIRTUAL4C(_draw, RID, Point2, Color, bool)
+	GDVIRTUAL5C(_draw_rect, RID, Rect2, bool, Color, bool)
+	GDVIRTUAL6C(_draw_rect_region, RID, Rect2, Rect2, Color, bool, bool)
+
 public:
-	virtual int get_width() const = 0;
-	virtual int get_height() const = 0;
+	virtual int get_width() const;
+	virtual int get_height() const;
 	virtual Size2 get_size() const;
 
 	virtual bool is_pixel_opaque(int p_x, int p_y) const;
 
-	virtual bool has_alpha() const = 0;
+	virtual bool has_alpha() const;
 
 	virtual void draw(RID p_canvas_item, const Point2 &p_pos, const Color &p_modulate = Color(1, 1, 1), bool p_transpose = false) const;
 	virtual void draw_rect(RID p_canvas_item, const Rect2 &p_rect, bool p_tile = false, const Color &p_modulate = Color(1, 1, 1), bool p_transpose = false) const;
@@ -72,6 +81,8 @@ public:
 	virtual bool get_rect_region(const Rect2 &p_rect, const Rect2 &p_src_rect, Rect2 &r_rect, Rect2 &r_src_rect) const;
 
 	virtual Ref<Image> get_image() const { return Ref<Image>(); }
+
+	virtual Ref<Resource> create_placeholder() const;
 
 	Texture2D();
 };
@@ -101,7 +112,8 @@ protected:
 	static void _bind_methods();
 
 public:
-	void create_from_image(const Ref<Image> &p_image);
+	void set_image(const Ref<Image> &p_image);
+	static Ref<ImageTexture> create_from_image(const Ref<Image> &p_image);
 
 	Image::Format get_format() const;
 
@@ -120,7 +132,7 @@ public:
 
 	bool is_pixel_opaque(int p_x, int p_y) const override;
 
-	void set_size_override(const Size2 &p_size);
+	void set_size_override(const Size2i &p_size);
 
 	virtual void set_path(const String &p_path, bool p_take_over = false) override;
 
@@ -128,8 +140,80 @@ public:
 	~ImageTexture();
 };
 
-class StreamTexture2D : public Texture2D {
-	GDCLASS(StreamTexture2D, Texture2D);
+class PortableCompressedTexture2D : public Texture2D {
+	GDCLASS(PortableCompressedTexture2D, Texture2D);
+
+public:
+	enum CompressionMode {
+		COMPRESSION_MODE_LOSSLESS,
+		COMPRESSION_MODE_LOSSY,
+		COMPRESSION_MODE_BASIS_UNIVERSAL,
+		COMPRESSION_MODE_S3TC,
+		COMPRESSION_MODE_ETC2,
+		COMPRESSION_MODE_BPTC,
+	};
+
+private:
+	CompressionMode compression_mode = COMPRESSION_MODE_LOSSLESS;
+	static bool keep_all_compressed_buffers;
+	bool keep_compressed_buffer = false;
+	Vector<uint8_t> compressed_buffer;
+	Size2 size;
+	Size2 size_override;
+	bool mipmaps = false;
+	Image::Format format = Image::FORMAT_L8;
+
+	mutable RID texture;
+	mutable Ref<BitMap> alpha_cache;
+
+	bool image_stored = false;
+
+protected:
+	Vector<uint8_t> _get_data() const;
+	void _set_data(const Vector<uint8_t> &p_data);
+
+	static void _bind_methods();
+
+public:
+	CompressionMode get_compression_mode() const;
+	void create_from_image(const Ref<Image> &p_image, CompressionMode p_compression_mode, bool p_normal_map = false, float p_lossy_quality = 0.8);
+
+	Image::Format get_format() const;
+
+	void update(const Ref<Image> &p_image);
+	Ref<Image> get_image() const override;
+
+	int get_width() const override;
+	int get_height() const override;
+
+	virtual RID get_rid() const override;
+
+	bool has_alpha() const override;
+	virtual void draw(RID p_canvas_item, const Point2 &p_pos, const Color &p_modulate = Color(1, 1, 1), bool p_transpose = false) const override;
+	virtual void draw_rect(RID p_canvas_item, const Rect2 &p_rect, bool p_tile = false, const Color &p_modulate = Color(1, 1, 1), bool p_transpose = false) const override;
+	virtual void draw_rect_region(RID p_canvas_item, const Rect2 &p_rect, const Rect2 &p_src_rect, const Color &p_modulate = Color(1, 1, 1), bool p_transpose = false, bool p_clip_uv = true) const override;
+
+	bool is_pixel_opaque(int p_x, int p_y) const override;
+
+	virtual void set_path(const String &p_path, bool p_take_over = false) override;
+
+	void set_size_override(const Size2 &p_size);
+	Size2 get_size_override() const;
+
+	void set_keep_compressed_buffer(bool p_keep);
+	bool is_keeping_compressed_buffer() const;
+
+	static void set_keep_all_compressed_buffers(bool p_keep);
+	static bool is_keeping_all_compressed_buffers();
+
+	PortableCompressedTexture2D();
+	~PortableCompressedTexture2D();
+};
+
+VARIANT_ENUM_CAST(PortableCompressedTexture2D::CompressionMode)
+
+class CompressedTexture2D : public Texture2D {
+	GDCLASS(CompressedTexture2D, Texture2D);
 
 public:
 	enum DataFormat {
@@ -156,7 +240,7 @@ private:
 	Error _load_data(const String &p_path, int &r_width, int &r_height, Ref<Image> &image, bool &r_request_3d, bool &r_request_normal, bool &r_request_roughness, int &mipmap_limit, int p_size_limit = 0);
 	String path_to_file;
 	mutable RID texture;
-	Image::Format format = Image::FORMAT_MAX;
+	Image::Format format = Image::FORMAT_L8;
 	int w = 0;
 	int h = 0;
 	mutable Ref<BitMap> alpha_cache;
@@ -169,13 +253,13 @@ private:
 
 protected:
 	static void _bind_methods();
-	void _validate_property(PropertyInfo &property) const override;
+	void _validate_property(PropertyInfo &p_property) const;
 
 public:
-	static Ref<Image> load_image_from_file(FileAccess *p_file, int p_size_limit);
+	static Ref<Image> load_image_from_file(Ref<FileAccess> p_file, int p_size_limit);
 
-	typedef void (*TextureFormatRequestCallback)(const Ref<StreamTexture2D> &);
-	typedef void (*TextureFormatRoughnessRequestCallback)(const Ref<StreamTexture2D> &, const String &p_normal_path, RS::TextureDetectRoughnessChannel p_roughness_channel);
+	typedef void (*TextureFormatRequestCallback)(const Ref<CompressedTexture2D> &);
+	typedef void (*TextureFormatRoughnessRequestCallback)(const Ref<CompressedTexture2D> &, const String &p_normal_path, RS::TextureDetectRoughnessChannel p_roughness_channel);
 
 	static TextureFormatRequestCallback request_3d_callback;
 	static TextureFormatRoughnessRequestCallback request_roughness_callback;
@@ -200,13 +284,13 @@ public:
 
 	virtual Ref<Image> get_image() const override;
 
-	StreamTexture2D();
-	~StreamTexture2D();
+	CompressedTexture2D();
+	~CompressedTexture2D();
 };
 
-class ResourceFormatLoaderStreamTexture2D : public ResourceFormatLoader {
+class ResourceFormatLoaderCompressedTexture2D : public ResourceFormatLoader {
 public:
-	virtual RES load(const String &p_path, const String &p_original_path = "", Error *r_error = nullptr, bool p_use_sub_threads = false, float *r_progress = nullptr, CacheMode p_cache_mode = CACHE_MODE_REUSE);
+	virtual Ref<Resource> load(const String &p_path, const String &p_original_path = "", Error *r_error = nullptr, bool p_use_sub_threads = false, float *r_progress = nullptr, CacheMode p_cache_mode = CACHE_MODE_REUSE);
 	virtual void get_recognized_extensions(List<String> *p_extensions) const;
 	virtual bool handles_type(const String &p_type) const;
 	virtual String get_resource_type(const String &p_path) const;
@@ -300,6 +384,13 @@ class TextureLayered : public Texture {
 protected:
 	static void _bind_methods();
 
+	GDVIRTUAL0RC(Image::Format, _get_format)
+	GDVIRTUAL0RC(uint32_t, _get_layered_type)
+	GDVIRTUAL0RC(int, _get_width)
+	GDVIRTUAL0RC(int, _get_height)
+	GDVIRTUAL0RC(int, _get_layers)
+	GDVIRTUAL0RC(bool, _has_mipmaps)
+	GDVIRTUAL1RC(Ref<Image>, _get_layer_data, int)
 public:
 	enum LayeredType {
 		LAYERED_TYPE_2D_ARRAY,
@@ -307,13 +398,15 @@ public:
 		LAYERED_TYPE_CUBEMAP_ARRAY
 	};
 
-	virtual Image::Format get_format() const = 0;
-	virtual LayeredType get_layered_type() const = 0;
-	virtual int get_width() const = 0;
-	virtual int get_height() const = 0;
-	virtual int get_layers() const = 0;
-	virtual bool has_mipmaps() const = 0;
-	virtual Ref<Image> get_layer_data(int p_layer) const = 0;
+	virtual Image::Format get_format() const;
+	virtual LayeredType get_layered_type() const;
+	virtual int get_width() const;
+	virtual int get_height() const;
+	virtual int get_layers() const;
+	virtual bool has_mipmaps() const;
+	virtual Ref<Image> get_layer_data(int p_layer) const;
+
+	TextureLayered() {}
 };
 
 VARIANT_ENUM_CAST(TextureLayered::LayeredType)
@@ -324,16 +417,16 @@ class ImageTextureLayered : public TextureLayered {
 	LayeredType layered_type;
 
 	mutable RID texture;
-	Image::Format format = Image::FORMAT_MAX;
+	Image::Format format = Image::FORMAT_L8;
 
 	int width = 0;
 	int height = 0;
 	int layers = 0;
 	bool mipmaps = false;
 
-	Error _create_from_images(const Array &p_images);
+	Error _create_from_images(const TypedArray<Image> &p_images);
 
-	Array _get_images() const;
+	TypedArray<Image> _get_images() const;
 
 protected:
 	static void _bind_methods();
@@ -359,29 +452,45 @@ public:
 
 class Texture2DArray : public ImageTextureLayered {
 	GDCLASS(Texture2DArray, ImageTextureLayered)
+
+protected:
+	static void _bind_methods();
+
 public:
 	Texture2DArray() :
 			ImageTextureLayered(LAYERED_TYPE_2D_ARRAY) {}
+
+	virtual Ref<Resource> create_placeholder() const;
 };
 
 class Cubemap : public ImageTextureLayered {
 	GDCLASS(Cubemap, ImageTextureLayered);
 
+protected:
+	static void _bind_methods();
+
 public:
 	Cubemap() :
 			ImageTextureLayered(LAYERED_TYPE_CUBEMAP) {}
+
+	virtual Ref<Resource> create_placeholder() const;
 };
 
 class CubemapArray : public ImageTextureLayered {
 	GDCLASS(CubemapArray, ImageTextureLayered);
 
+protected:
+	static void _bind_methods();
+
 public:
 	CubemapArray() :
 			ImageTextureLayered(LAYERED_TYPE_CUBEMAP_ARRAY) {}
+
+	virtual Ref<Resource> create_placeholder() const;
 };
 
-class StreamTextureLayered : public TextureLayered {
-	GDCLASS(StreamTextureLayered, TextureLayered);
+class CompressedTextureLayered : public TextureLayered {
+	GDCLASS(CompressedTextureLayered, TextureLayered);
 
 public:
 	enum DataFormat {
@@ -404,7 +513,7 @@ private:
 	Error _load_data(const String &p_path, Vector<Ref<Image>> &images, int &mipmap_limit, int p_size_limit = 0);
 	String path_to_file;
 	mutable RID texture;
-	Image::Format format = Image::FORMAT_MAX;
+	Image::Format format = Image::FORMAT_L8;
 	int w = 0;
 	int h = 0;
 	int layers = 0;
@@ -415,7 +524,7 @@ private:
 
 protected:
 	static void _bind_methods();
-	void _validate_property(PropertyInfo &property) const override;
+	void _validate_property(PropertyInfo &p_property) const;
 
 public:
 	Image::Format get_format() const override;
@@ -433,36 +542,36 @@ public:
 
 	virtual Ref<Image> get_layer_data(int p_layer) const override;
 
-	StreamTextureLayered(LayeredType p_layered_type);
-	~StreamTextureLayered();
+	CompressedTextureLayered(LayeredType p_layered_type);
+	~CompressedTextureLayered();
 };
 
-class StreamTexture2DArray : public StreamTextureLayered {
-	GDCLASS(StreamTexture2DArray, StreamTextureLayered)
+class CompressedTexture2DArray : public CompressedTextureLayered {
+	GDCLASS(CompressedTexture2DArray, CompressedTextureLayered)
 public:
-	StreamTexture2DArray() :
-			StreamTextureLayered(LAYERED_TYPE_2D_ARRAY) {}
+	CompressedTexture2DArray() :
+			CompressedTextureLayered(LAYERED_TYPE_2D_ARRAY) {}
 };
 
-class StreamCubemap : public StreamTextureLayered {
-	GDCLASS(StreamCubemap, StreamTextureLayered);
+class CompressedCubemap : public CompressedTextureLayered {
+	GDCLASS(CompressedCubemap, CompressedTextureLayered);
 
 public:
-	StreamCubemap() :
-			StreamTextureLayered(LAYERED_TYPE_CUBEMAP) {}
+	CompressedCubemap() :
+			CompressedTextureLayered(LAYERED_TYPE_CUBEMAP) {}
 };
 
-class StreamCubemapArray : public StreamTextureLayered {
-	GDCLASS(StreamCubemapArray, StreamTextureLayered);
+class CompressedCubemapArray : public CompressedTextureLayered {
+	GDCLASS(CompressedCubemapArray, CompressedTextureLayered);
 
 public:
-	StreamCubemapArray() :
-			StreamTextureLayered(LAYERED_TYPE_CUBEMAP_ARRAY) {}
+	CompressedCubemapArray() :
+			CompressedTextureLayered(LAYERED_TYPE_CUBEMAP_ARRAY) {}
 };
 
-class ResourceFormatLoaderStreamTextureLayered : public ResourceFormatLoader {
+class ResourceFormatLoaderCompressedTextureLayered : public ResourceFormatLoader {
 public:
-	virtual RES load(const String &p_path, const String &p_original_path = "", Error *r_error = nullptr, bool p_use_sub_threads = false, float *r_progress = nullptr, CacheMode p_cache_mode = CACHE_MODE_REUSE);
+	virtual Ref<Resource> load(const String &p_path, const String &p_original_path = "", Error *r_error = nullptr, bool p_use_sub_threads = false, float *r_progress = nullptr, CacheMode p_cache_mode = CACHE_MODE_REUSE);
 	virtual void get_recognized_extensions(List<String> *p_extensions) const;
 	virtual bool handles_type(const String &p_type) const;
 	virtual String get_resource_type(const String &p_path) const;
@@ -474,15 +583,22 @@ class Texture3D : public Texture {
 protected:
 	static void _bind_methods();
 
-	TypedArray<Image> _get_data() const;
+	TypedArray<Image> _get_datai() const;
 
+	GDVIRTUAL0RC(Image::Format, _get_format)
+	GDVIRTUAL0RC(int, _get_width)
+	GDVIRTUAL0RC(int, _get_height)
+	GDVIRTUAL0RC(int, _get_depth)
+	GDVIRTUAL0RC(bool, _has_mipmaps)
+	GDVIRTUAL0RC(TypedArray<Image>, _get_data)
 public:
-	virtual Image::Format get_format() const = 0;
-	virtual int get_width() const = 0;
-	virtual int get_height() const = 0;
-	virtual int get_depth() const = 0;
-	virtual bool has_mipmaps() const = 0;
-	virtual Vector<Ref<Image>> get_data() const = 0;
+	virtual Image::Format get_format() const;
+	virtual int get_width() const;
+	virtual int get_height() const;
+	virtual int get_depth() const;
+	virtual bool has_mipmaps() const;
+	virtual Vector<Ref<Image>> get_data() const;
+	virtual Ref<Resource> create_placeholder() const;
 };
 
 class ImageTexture3D : public Texture3D {
@@ -490,7 +606,7 @@ class ImageTexture3D : public Texture3D {
 
 	mutable RID texture;
 
-	Image::Format format = Image::FORMAT_MAX;
+	Image::Format format = Image::FORMAT_L8;
 	int width = 1;
 	int height = 1;
 	int depth = 1;
@@ -520,8 +636,8 @@ public:
 	~ImageTexture3D();
 };
 
-class StreamTexture3D : public Texture3D {
-	GDCLASS(StreamTexture3D, Texture3D);
+class CompressedTexture3D : public Texture3D {
+	GDCLASS(CompressedTexture3D, Texture3D);
 
 public:
 	enum DataFormat {
@@ -544,7 +660,7 @@ private:
 	Error _load_data(const String &p_path, Vector<Ref<Image>> &r_data, Image::Format &r_format, int &r_width, int &r_height, int &r_depth, bool &r_mipmaps);
 	String path_to_file;
 	mutable RID texture;
-	Image::Format format = Image::FORMAT_MAX;
+	Image::Format format = Image::FORMAT_L8;
 	int w = 0;
 	int h = 0;
 	int d = 0;
@@ -554,7 +670,7 @@ private:
 
 protected:
 	static void _bind_methods();
-	void _validate_property(PropertyInfo &property) const override;
+	void _validate_property(PropertyInfo &p_property) const;
 
 public:
 	Image::Format get_format() const override;
@@ -571,13 +687,13 @@ public:
 
 	virtual Vector<Ref<Image>> get_data() const override;
 
-	StreamTexture3D();
-	~StreamTexture3D();
+	CompressedTexture3D();
+	~CompressedTexture3D();
 };
 
-class ResourceFormatLoaderStreamTexture3D : public ResourceFormatLoader {
+class ResourceFormatLoaderCompressedTexture3D : public ResourceFormatLoader {
 public:
-	virtual RES load(const String &p_path, const String &p_original_path = "", Error *r_error = nullptr, bool p_use_sub_threads = false, float *r_progress = nullptr, CacheMode p_cache_mode = CACHE_MODE_REUSE);
+	virtual Ref<Resource> load(const String &p_path, const String &p_original_path = "", Error *r_error = nullptr, bool p_use_sub_threads = false, float *r_progress = nullptr, CacheMode p_cache_mode = CACHE_MODE_REUSE);
 	virtual void get_recognized_extensions(List<String> *p_extensions) const;
 	virtual bool handles_type(const String &p_type) const;
 	virtual String get_resource_type(const String &p_path) const;
@@ -595,7 +711,7 @@ public:
 private:
 	mutable RID _texture;
 	Ref<Curve> _curve;
-	int _width = 2048;
+	int _width = 256;
 	int _current_width = 0;
 	TextureMode texture_mode = TEXTURE_MODE_RGB;
 	TextureMode _current_texture_mode = TEXTURE_MODE_RGB;
@@ -637,7 +753,7 @@ private:
 	Ref<Curve> _curve_x;
 	Ref<Curve> _curve_y;
 	Ref<Curve> _curve_z;
-	int _width = 2048;
+	int _width = 256;
 	int _current_width = 0;
 
 	void _update();
@@ -669,23 +785,14 @@ public:
 	~CurveXYZTexture();
 };
 
-class GradientTexture : public Texture2D {
-	GDCLASS(GradientTexture, Texture2D);
-
-public:
-	struct Point {
-		float offset = 0.0;
-		Color color;
-		bool operator<(const Point &p_ponit) const {
-			return offset < p_ponit.offset;
-		}
-	};
+class GradientTexture1D : public Texture2D {
+	GDCLASS(GradientTexture1D, Texture2D);
 
 private:
 	Ref<Gradient> gradient;
 	bool update_pending = false;
 	RID texture;
-	int width = 2048;
+	int width = 256;
 	bool use_hdr = false;
 
 	void _queue_update();
@@ -710,34 +817,80 @@ public:
 
 	virtual Ref<Image> get_image() const override;
 
-	GradientTexture();
-	virtual ~GradientTexture();
+	GradientTexture1D();
+	virtual ~GradientTexture1D();
 };
 
-class ProxyTexture : public Texture2D {
-	GDCLASS(ProxyTexture, Texture2D);
+class GradientTexture2D : public Texture2D {
+	GDCLASS(GradientTexture2D, Texture2D);
+
+public:
+	enum Fill {
+		FILL_LINEAR,
+		FILL_RADIAL,
+	};
+	enum Repeat {
+		REPEAT_NONE,
+		REPEAT,
+		REPEAT_MIRROR,
+	};
 
 private:
-	mutable RID proxy_ph;
-	mutable RID proxy;
-	Ref<Texture2D> base;
+	Ref<Gradient> gradient;
+	mutable RID texture;
+
+	int width = 64;
+	int height = 64;
+
+	bool use_hdr = false;
+
+	Vector2 fill_from;
+	Vector2 fill_to = Vector2(1, 0);
+
+	Fill fill = FILL_LINEAR;
+	Repeat repeat = REPEAT_NONE;
+
+	float _get_gradient_offset_at(int x, int y) const;
+
+	bool update_pending = false;
+	void _queue_update();
+	void _update();
 
 protected:
 	static void _bind_methods();
 
 public:
-	void set_base(const Ref<Texture2D> &p_texture);
-	Ref<Texture2D> get_base() const;
+	void set_gradient(Ref<Gradient> p_gradient);
+	Ref<Gradient> get_gradient() const;
 
+	void set_width(int p_width);
 	virtual int get_width() const override;
+	void set_height(int p_height);
 	virtual int get_height() const override;
+
+	void set_use_hdr(bool p_enabled);
+	bool is_using_hdr() const;
+
+	void set_fill(Fill p_fill);
+	Fill get_fill() const;
+	void set_fill_from(Vector2 p_fill_from);
+	Vector2 get_fill_from() const;
+	void set_fill_to(Vector2 p_fill_to);
+	Vector2 get_fill_to() const;
+
+	void set_repeat(Repeat p_repeat);
+	Repeat get_repeat() const;
+
 	virtual RID get_rid() const override;
+	virtual bool has_alpha() const override { return true; }
+	virtual Ref<Image> get_image() const override;
 
-	virtual bool has_alpha() const override;
-
-	ProxyTexture();
-	~ProxyTexture();
+	GradientTexture2D();
+	virtual ~GradientTexture2D();
 };
+
+VARIANT_ENUM_CAST(GradientTexture2D::Fill);
+VARIANT_ENUM_CAST(GradientTexture2D::Repeat);
 
 class AnimatedTexture : public Texture2D {
 	GDCLASS(AnimatedTexture, Texture2D);
@@ -756,15 +909,15 @@ private:
 
 	struct Frame {
 		Ref<Texture2D> texture;
-		float delay_sec = 0.0;
+		float duration = 1.0;
 	};
 
 	Frame frames[MAX_FRAMES];
 	int frame_count = 1.0;
 	int current_frame = 0;
 	bool pause = false;
-	bool oneshot = false;
-	float fps = 4.0;
+	bool one_shot = false;
+	float speed_scale = 1.0;
 
 	float time = 0.0;
 
@@ -774,7 +927,7 @@ private:
 
 protected:
 	static void _bind_methods();
-	void _validate_property(PropertyInfo &property) const override;
+	void _validate_property(PropertyInfo &p_property) const;
 
 public:
 	void set_frames(int p_frames);
@@ -786,17 +939,17 @@ public:
 	void set_pause(bool p_pause);
 	bool get_pause() const;
 
-	void set_oneshot(bool p_oneshot);
-	bool get_oneshot() const;
+	void set_one_shot(bool p_one_shot);
+	bool get_one_shot() const;
 
 	void set_frame_texture(int p_frame, const Ref<Texture2D> &p_texture);
 	Ref<Texture2D> get_frame_texture(int p_frame) const;
 
-	void set_frame_delay(int p_frame, float p_delay_sec);
-	float get_frame_delay(int p_frame) const;
+	void set_frame_duration(int p_frame, float p_duration);
+	float get_frame_duration(int p_frame) const;
 
-	void set_fps(float p_fps);
-	float get_fps() const;
+	void set_speed_scale(float p_scale);
+	float get_speed_scale() const;
 
 	virtual int get_width() const override;
 	virtual int get_height() const override;
@@ -829,9 +982,6 @@ public:
 	virtual RID get_rid() const override;
 	virtual bool has_alpha() const override;
 
-	virtual void set_flags(uint32_t p_flags);
-	virtual uint32_t get_flags() const;
-
 	virtual Ref<Image> get_image() const override;
 
 	void set_camera_feed_id(int p_new_id);
@@ -847,4 +997,98 @@ public:
 	~CameraTexture();
 };
 
-#endif
+class PlaceholderTexture2D : public Texture2D {
+	GDCLASS(PlaceholderTexture2D, Texture2D)
+
+	RID rid;
+	Size2 size = Size2(1, 1);
+
+protected:
+	static void _bind_methods();
+
+public:
+	void set_size(Size2 p_size);
+
+	virtual int get_width() const override;
+	virtual int get_height() const override;
+	virtual RID get_rid() const override;
+	virtual bool has_alpha() const override;
+
+	virtual Ref<Image> get_image() const override;
+
+	PlaceholderTexture2D();
+	~PlaceholderTexture2D();
+};
+
+class PlaceholderTexture3D : public Texture3D {
+	GDCLASS(PlaceholderTexture3D, Texture3D)
+
+	RID rid;
+	Vector3i size = Vector3i(1, 1, 1);
+
+protected:
+	static void _bind_methods();
+
+public:
+	void set_size(const Vector3i &p_size);
+	Vector3i get_size() const;
+	virtual Image::Format get_format() const override;
+	virtual int get_width() const override;
+	virtual int get_height() const override;
+	virtual int get_depth() const override;
+	virtual bool has_mipmaps() const override;
+	virtual Vector<Ref<Image>> get_data() const override;
+
+	PlaceholderTexture3D();
+	~PlaceholderTexture3D();
+};
+
+class PlaceholderTextureLayered : public TextureLayered {
+	GDCLASS(PlaceholderTextureLayered, TextureLayered)
+
+	RID rid;
+	Size2i size = Size2i(1, 1);
+	int layers = 1;
+	LayeredType layered_type = LAYERED_TYPE_2D_ARRAY;
+
+protected:
+	static void _bind_methods();
+
+public:
+	void set_size(const Size2i &p_size);
+	Size2i get_size() const;
+	void set_layers(int p_layers);
+	virtual Image::Format get_format() const override;
+	virtual LayeredType get_layered_type() const override;
+	virtual int get_width() const override;
+	virtual int get_height() const override;
+	virtual int get_layers() const override;
+	virtual bool has_mipmaps() const override;
+	virtual Ref<Image> get_layer_data(int p_layer) const override;
+
+	PlaceholderTextureLayered(LayeredType p_type);
+	~PlaceholderTextureLayered();
+};
+
+class PlaceholderTexture2DArray : public PlaceholderTextureLayered {
+	GDCLASS(PlaceholderTexture2DArray, PlaceholderTextureLayered)
+public:
+	PlaceholderTexture2DArray() :
+			PlaceholderTextureLayered(LAYERED_TYPE_2D_ARRAY) {}
+};
+
+class PlaceholderCubemap : public PlaceholderTextureLayered {
+	GDCLASS(PlaceholderCubemap, PlaceholderTextureLayered)
+public:
+	PlaceholderCubemap() :
+			PlaceholderTextureLayered(LAYERED_TYPE_CUBEMAP) {}
+};
+
+class PlaceholderCubemapArray : public PlaceholderTextureLayered {
+	GDCLASS(PlaceholderCubemapArray, PlaceholderTextureLayered)
+public:
+	PlaceholderCubemapArray() :
+			PlaceholderTextureLayered(LAYERED_TYPE_CUBEMAP_ARRAY) {}
+};
+
+#endif // TEXTURE_H

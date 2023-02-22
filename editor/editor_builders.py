@@ -5,6 +5,11 @@ All such functions are invoked in a subprocess on Windows to prevent build flaki
 """
 import os
 import os.path
+import shutil
+import subprocess
+import tempfile
+import uuid
+import zlib
 from platform_methods import subprocess_main
 
 
@@ -24,9 +29,10 @@ def make_doc_header(target, source, env):
 
     buf = (docbegin + buf + docend).encode("utf-8")
     decomp_size = len(buf)
-    import zlib
 
-    buf = zlib.compress(buf)
+    # Use maximum zlib compression level to further reduce file size
+    # (at the cost of initial build times).
+    buf = zlib.compress(buf, zlib.Z_BEST_COMPRESSION)
 
     g.write("/* THIS FILE IS GENERATED DO NOT EDIT */\n")
     g.write("#ifndef _DOC_DATA_RAW_H\n")
@@ -82,17 +88,46 @@ def make_translations_header(target, source, env, category):
     g.write("#ifndef _{}_TRANSLATIONS_H\n".format(category.upper()))
     g.write("#define _{}_TRANSLATIONS_H\n".format(category.upper()))
 
-    import zlib
-    import os.path
-
     sorted_paths = sorted(source, key=lambda path: os.path.splitext(os.path.basename(path))[0])
+
+    msgfmt_available = shutil.which("msgfmt") is not None
+
+    if not msgfmt_available:
+        print("WARNING: msgfmt is not found, using .po files instead of .mo")
 
     xl_names = []
     for i in range(len(sorted_paths)):
-        with open(sorted_paths[i], "rb") as f:
-            buf = f.read()
+        if msgfmt_available:
+            mo_path = os.path.join(tempfile.gettempdir(), uuid.uuid4().hex + ".mo")
+            cmd = "msgfmt " + sorted_paths[i] + " --no-hash -o " + mo_path
+            try:
+                subprocess.Popen(cmd, shell=True, stderr=subprocess.PIPE).communicate()
+                with open(mo_path, "rb") as f:
+                    buf = f.read()
+            except OSError as e:
+                print(
+                    "WARNING: msgfmt execution failed, using .po file instead of .mo: path=%r; [%s] %s"
+                    % (sorted_paths[i], e.__class__.__name__, e)
+                )
+                with open(sorted_paths[i], "rb") as f:
+                    buf = f.read()
+            finally:
+                try:
+                    os.remove(mo_path)
+                except OSError as e:
+                    # Do not fail the entire build if it cannot delete a temporary file
+                    print(
+                        "WARNING: Could not delete temporary .mo file: path=%r; [%s] %s"
+                        % (mo_path, e.__class__.__name__, e)
+                    )
+        else:
+            with open(sorted_paths[i], "rb") as f:
+                buf = f.read()
+
         decomp_size = len(buf)
-        buf = zlib.compress(buf)
+        # Use maximum zlib compression level to further reduce file size
+        # (at the cost of initial build times).
+        buf = zlib.compress(buf, zlib.Z_BEST_COMPRESSION)
         name = os.path.splitext(os.path.basename(sorted_paths[i]))[0]
 
         g.write("static const unsigned char _{}_translation_{}_compressed[] = {{\n".format(category, name))
@@ -124,6 +159,10 @@ def make_translations_header(target, source, env, category):
 
 def make_editor_translations_header(target, source, env):
     make_translations_header(target, source, env, "editor")
+
+
+def make_property_translations_header(target, source, env):
+    make_translations_header(target, source, env, "property")
 
 
 def make_doc_translations_header(target, source, env):

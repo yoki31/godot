@@ -13,7 +13,7 @@ void _split_inform_references(uint32_t p_node_id) {
 
 void _split_leaf_sort_groups_simple(int &num_a, int &num_b, uint16_t *group_a, uint16_t *group_b, const BVHABB_CLASS *temp_bounds, const BVHABB_CLASS full_bound) {
 	// special case for low leaf sizes .. should static compile out
-	if (MAX_ITEMS < 4) {
+	if constexpr (MAX_ITEMS < 4) {
 		uint32_t ind = group_a[0];
 
 		// add to b
@@ -25,16 +25,16 @@ void _split_leaf_sort_groups_simple(int &num_a, int &num_b, uint16_t *group_a, u
 		return;
 	}
 
-	Point centre = full_bound.calculate_centre();
-	Point size = full_bound.calculate_size();
+	POINT center = full_bound.calculate_center();
+	POINT size = full_bound.calculate_size();
 
-	int order[Point::AXIS_COUNT];
+	int order[POINT::AXIS_COUNT];
 
-	order[0] = size.min_axis();
-	order[Point::AXIS_COUNT - 1] = size.max_axis();
+	order[0] = size.min_axis_index();
+	order[POINT::AXIS_COUNT - 1] = size.max_axis_index();
 
-	static_assert(Point::AXIS_COUNT <= 3);
-	if (Point::AXIS_COUNT == 3) {
+	static_assert(POINT::AXIS_COUNT <= 3, "BVH POINT::AXIS_COUNT has unexpected size");
+	if constexpr (POINT::AXIS_COUNT == 3) {
 		order[1] = 3 - (order[0] + order[2]);
 	}
 
@@ -43,7 +43,7 @@ void _split_leaf_sort_groups_simple(int &num_a, int &num_b, uint16_t *group_a, u
 	for (int a = 0; a < num_a; a++) {
 		uint32_t ind = group_a[a];
 
-		if (temp_bounds[ind].min.coord[split_axis] > centre.coord[split_axis]) {
+		if (temp_bounds[ind].min.coord[split_axis] > center.coord[split_axis]) {
 			// add to b
 			group_b[num_b++] = ind;
 
@@ -58,7 +58,7 @@ void _split_leaf_sort_groups_simple(int &num_a, int &num_b, uint16_t *group_a, u
 
 	// detect when split on longest axis failed
 	int min_threshold = MAX_ITEMS / 4;
-	int min_group_size[Point::AXIS_COUNT];
+	int min_group_size[POINT::AXIS_COUNT];
 	min_group_size[0] = MIN(num_a, num_b);
 	if (min_group_size[0] < min_threshold) {
 		// slow but sure .. first move everything back into a
@@ -68,14 +68,14 @@ void _split_leaf_sort_groups_simple(int &num_a, int &num_b, uint16_t *group_a, u
 		num_b = 0;
 
 		// now calculate the best split
-		for (int axis = 1; axis < Point::AXIS_COUNT; axis++) {
+		for (int axis = 1; axis < POINT::AXIS_COUNT; axis++) {
 			split_axis = order[axis];
 			int count = 0;
 
 			for (int a = 0; a < num_a; a++) {
 				uint32_t ind = group_a[a];
 
-				if (temp_bounds[ind].min.coord[split_axis] > centre.coord[split_axis]) {
+				if (temp_bounds[ind].min.coord[split_axis] > center.coord[split_axis]) {
 					count++;
 				}
 			}
@@ -86,7 +86,7 @@ void _split_leaf_sort_groups_simple(int &num_a, int &num_b, uint16_t *group_a, u
 		// best axis
 		int best_axis = 0;
 		int best_min = min_group_size[0];
-		for (int axis = 1; axis < Point::AXIS_COUNT; axis++) {
+		for (int axis = 1; axis < POINT::AXIS_COUNT; axis++) {
 			if (min_group_size[axis] > best_min) {
 				best_min = min_group_size[axis];
 				best_axis = axis;
@@ -100,7 +100,7 @@ void _split_leaf_sort_groups_simple(int &num_a, int &num_b, uint16_t *group_a, u
 			for (int a = 0; a < num_a; a++) {
 				uint32_t ind = group_a[a];
 
-				if (temp_bounds[ind].min.coord[split_axis] > centre.coord[split_axis]) {
+				if (temp_bounds[ind].min.coord[split_axis] > center.coord[split_axis]) {
 					// add to b
 					group_b[num_b++] = ind;
 

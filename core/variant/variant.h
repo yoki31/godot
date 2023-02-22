@@ -1,58 +1,66 @@
-/*************************************************************************/
-/*  variant.h                                                            */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  variant.h                                                             */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #ifndef VARIANT_H
 #define VARIANT_H
 
+#include "core/input/input_enums.h"
 #include "core/io/ip_address.h"
 #include "core/math/aabb.h"
 #include "core/math/basis.h"
 #include "core/math/color.h"
 #include "core/math/face3.h"
 #include "core/math/plane.h"
+#include "core/math/projection.h"
 #include "core/math/quaternion.h"
+#include "core/math/rect2.h"
+#include "core/math/rect2i.h"
 #include "core/math/transform_2d.h"
 #include "core/math/transform_3d.h"
+#include "core/math/vector2.h"
+#include "core/math/vector2i.h"
 #include "core/math/vector3.h"
 #include "core/math/vector3i.h"
+#include "core/math/vector4.h"
+#include "core/math/vector4i.h"
 #include "core/object/object_id.h"
+#include "core/os/keyboard.h"
 #include "core/string/node_path.h"
 #include "core/string/ustring.h"
+#include "core/templates/paged_allocator.h"
 #include "core/templates/rid.h"
 #include "core/variant/array.h"
 #include "core/variant/callable.h"
 #include "core/variant/dictionary.h"
 
 class Object;
-class Node; // helper
-class Control; // helper
 
 struct PropertyInfo;
 struct MethodInfo;
@@ -87,11 +95,14 @@ public:
 		VECTOR3,
 		VECTOR3I,
 		TRANSFORM2D,
+		VECTOR4,
+		VECTOR4I,
 		PLANE,
 		QUATERNION,
 		AABB,
 		BASIS,
 		TRANSFORM3D,
+		PROJECTION,
 
 		// misc types
 		COLOR,
@@ -124,6 +135,30 @@ public:
 	};
 
 private:
+	struct Pools {
+		union BucketSmall {
+			BucketSmall() {}
+			~BucketSmall() {}
+			Transform2D _transform2d;
+			::AABB _aabb;
+		};
+		union BucketMedium {
+			BucketMedium() {}
+			~BucketMedium() {}
+			Basis _basis;
+			Transform3D _transform3d;
+		};
+		union BucketLarge {
+			BucketLarge() {}
+			~BucketLarge() {}
+			Projection _projection;
+		};
+
+		static PagedAllocator<BucketSmall, true> _bucket_small;
+		static PagedAllocator<BucketMedium, true> _bucket_medium;
+		static PagedAllocator<BucketLarge, true> _bucket_large;
+	};
+
 	friend struct _VariantCall;
 	friend class VariantInternal;
 	// Variant takes 20 bytes when real_t is float, and 36 if double
@@ -206,12 +241,14 @@ private:
 		::AABB *_aabb;
 		Basis *_basis;
 		Transform3D *_transform3d;
+		Projection *_projection;
 		PackedArrayRefBase *packed_array;
 		void *_ptr; //generic pointer
 		uint8_t _mem[sizeof(ObjData) > (sizeof(real_t) * 4) ? sizeof(ObjData) : (sizeof(real_t) * 4)]{ 0 };
 	} _data alignas(8);
 
 	void reference(const Variant &p_variant);
+	static bool initialize_ref(Object *p_object);
 
 	void _clear_internal();
 
@@ -229,11 +266,14 @@ private:
 			false, //VECTOR3,
 			false, //VECTOR3I,
 			true, //TRANSFORM2D,
+			false, //VECTOR4,
+			false, //VECTOR4I,
 			false, //PLANE,
 			false, //QUATERNION,
 			true, //AABB,
 			true, //BASIS,
 			true, //TRANSFORM,
+			true, //PROJECTION,
 
 			// misc types
 			false, //COLOR,
@@ -277,6 +317,14 @@ private:
 	static void _register_variant_utility_functions();
 	static void _unregister_variant_utility_functions();
 
+	void _variant_call_error(const String &p_method, Callable::CallError &error);
+
+	// Avoid accidental conversion. If you reached this point, it's because you most likely forgot to dereference
+	// a Variant pointer (so add * like this: *variant_pointer).
+
+	Variant(const Variant *) {}
+	Variant(const Variant **) {}
+
 public:
 	_FORCE_INLINE_ Type get_type() const {
 		return type;
@@ -284,8 +332,9 @@ public:
 	static String get_type_name(Variant::Type p_type);
 	static bool can_convert(Type p_type_from, Type p_type_to);
 	static bool can_convert_strict(Type p_type_from, Type p_type_to);
+	static bool is_type_shared(Variant::Type p_type);
 
-	bool is_ref() const;
+	bool is_ref_counted() const;
 	_FORCE_INLINE_ bool is_num() const {
 		return type == INT || type == FLOAT;
 	}
@@ -296,6 +345,10 @@ public:
 	bool is_zero() const;
 	bool is_one() const;
 	bool is_null() const;
+
+	// Make sure Variant is not implicitly cast when accessing it with bracket notation (GH-49469).
+	Variant &operator[](const Variant &p_key) = delete;
+	const Variant &operator[](const Variant &p_key) const = delete;
 
 	operator bool() const;
 	operator signed int() const;
@@ -325,20 +378,21 @@ public:
 	operator Rect2i() const;
 	operator Vector3() const;
 	operator Vector3i() const;
+	operator Vector4() const;
+	operator Vector4i() const;
 	operator Plane() const;
 	operator ::AABB() const;
 	operator Quaternion() const;
 	operator Basis() const;
 	operator Transform2D() const;
 	operator Transform3D() const;
+	operator Projection() const;
 
 	operator Color() const;
 	operator NodePath() const;
 	operator ::RID() const;
 
 	operator Object *() const;
-	operator Node *() const;
-	operator Control *() const;
 
 	operator Callable() const;
 	operator Signal() const;
@@ -397,12 +451,15 @@ public:
 	Variant(const Rect2i &p_rect2i);
 	Variant(const Vector3 &p_vector3);
 	Variant(const Vector3i &p_vector3i);
+	Variant(const Vector4 &p_vector4);
+	Variant(const Vector4i &p_vector4i);
 	Variant(const Plane &p_plane);
 	Variant(const ::AABB &p_aabb);
 	Variant(const Quaternion &p_quat);
 	Variant(const Basis &p_matrix);
 	Variant(const Transform2D &p_transform);
 	Variant(const Transform3D &p_transform);
+	Variant(const Projection &p_projection);
 	Variant(const Color &p_color);
 	Variant(const NodePath &p_node_path);
 	Variant(const ::RID &p_rid);
@@ -430,6 +487,22 @@ public:
 
 	Variant(const IPAddress &p_address);
 
+#define VARIANT_ENUM_CLASS_CONSTRUCTOR(m_enum) \
+	Variant(const m_enum &p_value) {           \
+		type = INT;                            \
+		_data._int = (int64_t)p_value;         \
+	}
+
+	// Only enum classes that need to be bound need this to be defined.
+	VARIANT_ENUM_CLASS_CONSTRUCTOR(EulerOrder)
+	VARIANT_ENUM_CLASS_CONSTRUCTOR(JoyAxis)
+	VARIANT_ENUM_CLASS_CONSTRUCTOR(JoyButton)
+	VARIANT_ENUM_CLASS_CONSTRUCTOR(Key)
+	VARIANT_ENUM_CLASS_CONSTRUCTOR(MIDIMessage)
+	VARIANT_ENUM_CLASS_CONSTRUCTOR(MouseButton)
+
+#undef VARIANT_ENUM_CLASS_CONSTRUCTOR
+
 	// If this changes the table in variant_op must be updated
 	enum Operator {
 		//comparison
@@ -447,6 +520,7 @@ public:
 		OP_NEGATE,
 		OP_POSITIVE,
 		OP_MODULE,
+		OP_POWER,
 		//bitwise
 		OP_SHIFT_LEFT,
 		OP_SHIFT_RIGHT,
@@ -481,9 +555,8 @@ public:
 	static PTROperatorEvaluator get_ptr_operator_evaluator(Operator p_operator, Type p_type_a, Type p_type_b);
 
 	void zero();
-	Variant duplicate(bool deep = false) const;
-	static void blend(const Variant &a, const Variant &b, float c, Variant &r_dst);
-	static void interpolate(const Variant &a, const Variant &b, float c, Variant &r_dst);
+	Variant duplicate(bool p_deep = false) const;
+	Variant recursive_duplicate(bool p_deep, int recursion_count) const;
 
 	/* Built-In Methods */
 
@@ -508,9 +581,25 @@ public:
 	static int get_builtin_method_count(Variant::Type p_type);
 	static uint32_t get_builtin_method_hash(Variant::Type p_type, const StringName &p_method);
 
-	void call(const StringName &p_method, const Variant **p_args, int p_argcount, Variant &r_ret, Callable::CallError &r_error);
-	Variant call(const StringName &p_method, const Variant &p_arg1 = Variant(), const Variant &p_arg2 = Variant(), const Variant &p_arg3 = Variant(), const Variant &p_arg4 = Variant(), const Variant &p_arg5 = Variant(), const Variant &p_arg6 = Variant(), const Variant &p_arg7 = Variant(), const Variant &p_arg8 = Variant());
+	void callp(const StringName &p_method, const Variant **p_args, int p_argcount, Variant &r_ret, Callable::CallError &r_error);
 
+	template <typename... VarArgs>
+	Variant call(const StringName &p_method, VarArgs... p_args) {
+		Variant args[sizeof...(p_args) + 1] = { p_args..., Variant() }; // +1 makes sure zero sized arrays are also supported.
+		const Variant *argptrs[sizeof...(p_args) + 1];
+		for (uint32_t i = 0; i < sizeof...(p_args); i++) {
+			argptrs[i] = &args[i];
+		}
+		Callable::CallError cerr;
+		Variant ret;
+		callp(p_method, sizeof...(p_args) == 0 ? nullptr : (const Variant **)argptrs, sizeof...(p_args), ret, cerr);
+		if (cerr.error != Callable::CallError::CALL_OK) {
+			_variant_call_error(p_method, cerr);
+		}
+		return ret;
+	}
+
+	void call_const(const StringName &p_method, const Variant **p_args, int p_argcount, Variant &r_ret, Callable::CallError &r_error);
 	static void call_static(Variant::Type p_type, const StringName &p_method, const Variant **p_args, int p_argcount, Variant &r_ret, Callable::CallError &r_error);
 
 	static String get_call_error_text(const StringName &p_method, const Variant **p_argptrs, int p_argcount, const Callable::CallError &ce);
@@ -570,6 +659,7 @@ public:
 
 	static bool has_indexing(Variant::Type p_type);
 	static Variant::Type get_indexed_element_type(Variant::Type p_type);
+	static uint32_t get_indexed_element_usage(Variant::Type p_type);
 
 	typedef void (*ValidatedIndexedSetter)(Variant *base, int64_t index, const Variant *value, bool *oob);
 	typedef void (*ValidatedIndexedGetter)(const Variant *base, int64_t index, Variant *value, bool *oob);
@@ -659,10 +749,12 @@ public:
 	bool operator!=(const Variant &p_variant) const;
 	bool operator<(const Variant &p_variant) const;
 	uint32_t hash() const;
+	uint32_t recursive_hash(int recursion_count) const;
 
-	bool hash_compare(const Variant &p_variant) const;
+	bool hash_compare(const Variant &p_variant, int recursion_count = 0) const;
+	bool identity_compare(const Variant &p_variant) const;
 	bool booleanize() const;
-	String stringify(List<const void *> &stack) const;
+	String stringify(int recursion_count = 0) const;
 	String to_json_string() const;
 
 	void static_assign(const Variant &p_variant);
@@ -670,6 +762,10 @@ public:
 	static int get_constants_count_for_type(Variant::Type p_type);
 	static bool has_constant(Variant::Type p_type, const StringName &p_value);
 	static Variant get_constant_value(Variant::Type p_type, const StringName &p_value, bool *r_valid = nullptr);
+
+	static void get_enums_for_type(Variant::Type p_type, List<StringName> *p_enums);
+	static void get_enumerations_for_enum(Variant::Type p_type, StringName p_enum_name, List<StringName> *p_enumerations);
+	static int get_enum_value(Variant::Type p_type, StringName p_enum_name, StringName p_enumeration, bool *r_valid = nullptr);
 
 	typedef String (*ObjectDeConstruct)(const Variant &p_object, void *ud);
 	typedef void (*ObjectConstruct)(const String &p_text, void *ud, Variant &r_value);
@@ -707,6 +803,10 @@ struct VariantComparator {
 	static _FORCE_INLINE_ bool compare(const Variant &p_lhs, const Variant &p_rhs) { return p_lhs.hash_compare(p_rhs); }
 };
 
+struct StringLikeVariantComparator {
+	static bool compare(const Variant &p_lhs, const Variant &p_rhs);
+};
+
 Variant::ObjData &Variant::_get_obj() {
 	return *reinterpret_cast<ObjData *>(&_data._mem[0]);
 }
@@ -715,6 +815,31 @@ const Variant::ObjData &Variant::_get_obj() const {
 	return *reinterpret_cast<const ObjData *>(&_data._mem[0]);
 }
 
-String vformat(const String &p_text, const Variant &p1 = Variant(), const Variant &p2 = Variant(), const Variant &p3 = Variant(), const Variant &p4 = Variant(), const Variant &p5 = Variant());
+template <typename... VarArgs>
+String vformat(const String &p_text, const VarArgs... p_args) {
+	Variant args[sizeof...(p_args) + 1] = { p_args..., Variant() }; // +1 makes sure zero sized arrays are also supported.
+	Array args_array;
+	args_array.resize(sizeof...(p_args));
+	for (uint32_t i = 0; i < sizeof...(p_args); i++) {
+		args_array[i] = args[i];
+	}
+
+	bool error = false;
+	String fmt = p_text.sprintf(args_array, &error);
+
+	ERR_FAIL_COND_V_MSG(error, String(), fmt);
+
+	return fmt;
+}
+
+template <typename... VarArgs>
+Callable Callable::bind(VarArgs... p_args) {
+	Variant args[sizeof...(p_args) + 1] = { p_args..., Variant() }; // +1 makes sure zero sized arrays are also supported.
+	const Variant *argptrs[sizeof...(p_args) + 1];
+	for (uint32_t i = 0; i < sizeof...(p_args); i++) {
+		argptrs[i] = &args[i];
+	}
+	return bindp(sizeof...(p_args) == 0 ? nullptr : (const Variant **)argptrs, sizeof...(p_args));
+}
 
 #endif // VARIANT_H

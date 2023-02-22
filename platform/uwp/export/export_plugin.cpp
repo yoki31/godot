@@ -1,36 +1,43 @@
-/*************************************************************************/
-/*  export_plugin.cpp                                                    */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  export_plugin.cpp                                                     */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #include "export_plugin.h"
 
-#include "platform/uwp/logo.gen.h"
+#include "editor/editor_scale.h"
+#include "editor/editor_settings.h"
+#include "platform/uwp/logo_svg.gen.h"
+
+#include "modules/modules_enabled.gen.h" // For svg and regex.
+#ifdef MODULE_SVG_ENABLED
+#include "modules/svg/image_loader_svg.h"
+#endif
 
 String EditorExportPlatformUWP::get_name() const {
 	return "UWP";
@@ -49,27 +56,17 @@ Ref<Texture2D> EditorExportPlatformUWP::get_logo() const {
 	return logo;
 }
 
-void EditorExportPlatformUWP::get_preset_features(const Ref<EditorExportPreset> &p_preset, List<String> *r_features) {
+void EditorExportPlatformUWP::get_preset_features(const Ref<EditorExportPreset> &p_preset, List<String> *r_features) const {
 	r_features->push_back("s3tc");
 	r_features->push_back("etc");
-	switch ((int)p_preset->get("architecture/target")) {
-		case EditorExportPlatformUWP::ARM: {
-			r_features->push_back("arm");
-		} break;
-		case EditorExportPlatformUWP::X86: {
-			r_features->push_back("32");
-		} break;
-		case EditorExportPlatformUWP::X64: {
-			r_features->push_back("64");
-		} break;
-	}
+	r_features->push_back(p_preset->get("binary_format/architecture"));
 }
 
 void EditorExportPlatformUWP::get_export_options(List<ExportOption> *r_options) {
 	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "custom_template/debug", PROPERTY_HINT_GLOBAL_FILE, "*.zip"), ""));
 	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "custom_template/release", PROPERTY_HINT_GLOBAL_FILE, "*.zip"), ""));
 
-	r_options->push_back(ExportOption(PropertyInfo(Variant::INT, "architecture/target", PROPERTY_HINT_ENUM, "arm,x86,x64"), 1));
+	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "binary_format/architecture", PROPERTY_HINT_ENUM, "x86_64,x86_32,arm32"), "x86_64"));
 
 	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "command_line/extra_args"), ""));
 
@@ -98,13 +95,13 @@ void EditorExportPlatformUWP::get_export_options(List<ExportOption> *r_options) 
 	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "orientation/portrait_flipped"), true));
 
 	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "images/background_color"), "transparent"));
-	r_options->push_back(ExportOption(PropertyInfo(Variant::OBJECT, "images/store_logo", PROPERTY_HINT_RESOURCE_TYPE, "StreamTexture2D"), Variant()));
-	r_options->push_back(ExportOption(PropertyInfo(Variant::OBJECT, "images/square44x44_logo", PROPERTY_HINT_RESOURCE_TYPE, "StreamTexture2D"), Variant()));
-	r_options->push_back(ExportOption(PropertyInfo(Variant::OBJECT, "images/square71x71_logo", PROPERTY_HINT_RESOURCE_TYPE, "StreamTexture2D"), Variant()));
-	r_options->push_back(ExportOption(PropertyInfo(Variant::OBJECT, "images/square150x150_logo", PROPERTY_HINT_RESOURCE_TYPE, "StreamTexture2D"), Variant()));
-	r_options->push_back(ExportOption(PropertyInfo(Variant::OBJECT, "images/square310x310_logo", PROPERTY_HINT_RESOURCE_TYPE, "StreamTexture2D"), Variant()));
-	r_options->push_back(ExportOption(PropertyInfo(Variant::OBJECT, "images/wide310x150_logo", PROPERTY_HINT_RESOURCE_TYPE, "StreamTexture2D"), Variant()));
-	r_options->push_back(ExportOption(PropertyInfo(Variant::OBJECT, "images/splash_screen", PROPERTY_HINT_RESOURCE_TYPE, "StreamTexture2D"), Variant()));
+	r_options->push_back(ExportOption(PropertyInfo(Variant::OBJECT, "images/store_logo", PROPERTY_HINT_RESOURCE_TYPE, "CompressedTexture2D"), Variant()));
+	r_options->push_back(ExportOption(PropertyInfo(Variant::OBJECT, "images/square44x44_logo", PROPERTY_HINT_RESOURCE_TYPE, "CompressedTexture2D"), Variant()));
+	r_options->push_back(ExportOption(PropertyInfo(Variant::OBJECT, "images/square71x71_logo", PROPERTY_HINT_RESOURCE_TYPE, "CompressedTexture2D"), Variant()));
+	r_options->push_back(ExportOption(PropertyInfo(Variant::OBJECT, "images/square150x150_logo", PROPERTY_HINT_RESOURCE_TYPE, "CompressedTexture2D"), Variant()));
+	r_options->push_back(ExportOption(PropertyInfo(Variant::OBJECT, "images/square310x310_logo", PROPERTY_HINT_RESOURCE_TYPE, "CompressedTexture2D"), Variant()));
+	r_options->push_back(ExportOption(PropertyInfo(Variant::OBJECT, "images/wide310x150_logo", PROPERTY_HINT_RESOURCE_TYPE, "CompressedTexture2D"), Variant()));
+	r_options->push_back(ExportOption(PropertyInfo(Variant::OBJECT, "images/splash_screen", PROPERTY_HINT_RESOURCE_TYPE, "CompressedTexture2D"), Variant()));
 
 	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "tiles/show_name_on_square150x150"), false));
 	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "tiles/show_name_on_wide310x150"), false));
@@ -130,28 +127,31 @@ void EditorExportPlatformUWP::get_export_options(List<ExportOption> *r_options) 
 	}
 }
 
-bool EditorExportPlatformUWP::can_export(const Ref<EditorExportPreset> &p_preset, String &r_error, bool &r_missing_templates) const {
+bool EditorExportPlatformUWP::has_valid_export_configuration(const Ref<EditorExportPreset> &p_preset, String &r_error, bool &r_missing_templates) const {
+#ifndef DEV_ENABLED
+	// We don't provide export templates for the UWP platform currently as it
+	// has not been ported for Godot 4.0. This is skipped in DEV_ENABLED so that
+	// contributors can still test the pipeline if/when we can build it again.
+	r_error = "The UWP platform is currently not supported in Godot 4.0.\n";
+	return false;
+#endif
+
 	String err;
 	bool valid = false;
 
 	// Look for export templates (first official, and if defined custom templates).
-
-	Platform arch = (Platform)(int)(p_preset->get("architecture/target"));
-	String platform_infix;
-	switch (arch) {
-		case EditorExportPlatformUWP::ARM: {
-			platform_infix = "arm";
-		} break;
-		case EditorExportPlatformUWP::X86: {
-			platform_infix = "x86";
-		} break;
-		case EditorExportPlatformUWP::X64: {
-			platform_infix = "x64";
-		} break;
+	String arch = p_preset->get("binary_format/architecture");
+	String arch_infix;
+	if (arch == "arm32") {
+		arch_infix = "arm";
+	} else if (arch == "x86_32") {
+		arch_infix = "x86";
+	} else if (arch == "x86_64") {
+		arch_infix = "x64";
 	}
 
-	bool dvalid = exists_export_template("uwp_" + platform_infix + "_debug.zip", &err);
-	bool rvalid = exists_export_template("uwp_" + platform_infix + "_release.zip", &err);
+	bool dvalid = exists_export_template("uwp_" + arch_infix + "_debug.zip", &err);
+	bool rvalid = exists_export_template("uwp_" + arch_infix + "_release.zip", &err);
 
 	if (p_preset->get("custom_template/debug") != "") {
 		dvalid = FileAccess::exists(p_preset->get("custom_template/debug"));
@@ -169,7 +169,26 @@ bool EditorExportPlatformUWP::can_export(const Ref<EditorExportPreset> &p_preset
 	valid = dvalid || rvalid;
 	r_missing_templates = !valid;
 
-	// Validate the rest of the configuration.
+	if (!err.is_empty()) {
+		r_error = err;
+	}
+
+	return valid;
+}
+
+bool EditorExportPlatformUWP::has_valid_project_configuration(const Ref<EditorExportPreset> &p_preset, String &r_error) const {
+#ifndef DEV_ENABLED
+	// We don't provide export templates for the UWP platform currently as it
+	// has not been ported for Godot 4.0. This is skipped in DEV_ENABLED so that
+	// contributors can still test the pipeline if/when we can build it again.
+	r_error = "The UWP platform is currently not supported in Godot 4.0.\n";
+	return false;
+#endif
+
+	String err;
+	bool valid = true;
+
+	// Validate the project configuration.
 
 	if (!_valid_resource_name(p_preset->get("package/short_name"))) {
 		valid = false;
@@ -201,37 +220,37 @@ bool EditorExportPlatformUWP::can_export(const Ref<EditorExportPreset> &p_preset
 		err += TTR("Invalid background color.") + "\n";
 	}
 
-	if (!p_preset->get("images/store_logo").is_zero() && !_valid_image((Object::cast_to<StreamTexture2D>((Object *)p_preset->get("images/store_logo"))), 50, 50)) {
+	if (!p_preset->get("images/store_logo").is_zero() && !_valid_image((Object::cast_to<CompressedTexture2D>((Object *)p_preset->get("images/store_logo"))), 50, 50)) {
 		valid = false;
 		err += TTR("Invalid Store Logo image dimensions (should be 50x50).") + "\n";
 	}
 
-	if (!p_preset->get("images/square44x44_logo").is_zero() && !_valid_image((Object::cast_to<StreamTexture2D>((Object *)p_preset->get("images/square44x44_logo"))), 44, 44)) {
+	if (!p_preset->get("images/square44x44_logo").is_zero() && !_valid_image((Object::cast_to<CompressedTexture2D>((Object *)p_preset->get("images/square44x44_logo"))), 44, 44)) {
 		valid = false;
 		err += TTR("Invalid square 44x44 logo image dimensions (should be 44x44).") + "\n";
 	}
 
-	if (!p_preset->get("images/square71x71_logo").is_zero() && !_valid_image((Object::cast_to<StreamTexture2D>((Object *)p_preset->get("images/square71x71_logo"))), 71, 71)) {
+	if (!p_preset->get("images/square71x71_logo").is_zero() && !_valid_image((Object::cast_to<CompressedTexture2D>((Object *)p_preset->get("images/square71x71_logo"))), 71, 71)) {
 		valid = false;
 		err += TTR("Invalid square 71x71 logo image dimensions (should be 71x71).") + "\n";
 	}
 
-	if (!p_preset->get("images/square150x150_logo").is_zero() && !_valid_image((Object::cast_to<StreamTexture2D>((Object *)p_preset->get("images/square150x150_logo"))), 150, 150)) {
+	if (!p_preset->get("images/square150x150_logo").is_zero() && !_valid_image((Object::cast_to<CompressedTexture2D>((Object *)p_preset->get("images/square150x150_logo"))), 150, 150)) {
 		valid = false;
 		err += TTR("Invalid square 150x150 logo image dimensions (should be 150x150).") + "\n";
 	}
 
-	if (!p_preset->get("images/square310x310_logo").is_zero() && !_valid_image((Object::cast_to<StreamTexture2D>((Object *)p_preset->get("images/square310x310_logo"))), 310, 310)) {
+	if (!p_preset->get("images/square310x310_logo").is_zero() && !_valid_image((Object::cast_to<CompressedTexture2D>((Object *)p_preset->get("images/square310x310_logo"))), 310, 310)) {
 		valid = false;
 		err += TTR("Invalid square 310x310 logo image dimensions (should be 310x310).") + "\n";
 	}
 
-	if (!p_preset->get("images/wide310x150_logo").is_zero() && !_valid_image((Object::cast_to<StreamTexture2D>((Object *)p_preset->get("images/wide310x150_logo"))), 310, 150)) {
+	if (!p_preset->get("images/wide310x150_logo").is_zero() && !_valid_image((Object::cast_to<CompressedTexture2D>((Object *)p_preset->get("images/wide310x150_logo"))), 310, 150)) {
 		valid = false;
 		err += TTR("Invalid wide 310x150 logo image dimensions (should be 310x150).") + "\n";
 	}
 
-	if (!p_preset->get("images/splash_screen").is_zero() && !_valid_image((Object::cast_to<StreamTexture2D>((Object *)p_preset->get("images/splash_screen"))), 620, 300)) {
+	if (!p_preset->get("images/splash_screen").is_zero() && !_valid_image((Object::cast_to<CompressedTexture2D>((Object *)p_preset->get("images/splash_screen"))), 620, 300)) {
 		valid = false;
 		err += TTR("Invalid splash screen image dimensions (should be 620x300).") + "\n";
 	}
@@ -255,27 +274,23 @@ Error EditorExportPlatformUWP::export_project(const Ref<EditorExportPreset> &p_p
 
 	src_appx = src_appx.strip_edges();
 
-	Platform arch = (Platform)(int)p_preset->get("architecture/target");
+	String arch = p_preset->get("binary_format/architecture");
 
-	if (src_appx == "") {
-		String err, infix;
-		switch (arch) {
-			case ARM: {
-				infix = "_arm_";
-			} break;
-			case X86: {
-				infix = "_x86_";
-			} break;
-			case X64: {
-				infix = "_x64_";
-			} break;
+	if (src_appx.is_empty()) {
+		String err, arch_infix;
+		if (arch == "arm32") {
+			arch_infix = "arm";
+		} else if (arch == "x86_32") {
+			arch_infix = "x86";
+		} else if (arch == "x86_64") {
+			arch_infix = "x64";
 		}
 		if (p_debug) {
-			src_appx = find_export_template("uwp" + infix + "debug.zip", &err);
+			src_appx = find_export_template("uwp_" + arch_infix + "_debug.zip", &err);
 		} else {
-			src_appx = find_export_template("uwp" + infix + "release.zip", &err);
+			src_appx = find_export_template("uwp_" + arch_infix + "_release.zip", &err);
 		}
-		if (src_appx == "") {
+		if (src_appx.is_empty()) {
 			EditorNode::add_io_error(err);
 			return ERR_FILE_NOT_FOUND;
 		}
@@ -287,14 +302,14 @@ Error EditorExportPlatformUWP::export_project(const Ref<EditorExportPreset> &p_p
 
 	Error err = OK;
 
-	FileAccess *fa_pack = FileAccess::open(p_path, FileAccess::WRITE, &err);
+	Ref<FileAccess> fa_pack = FileAccess::open(p_path, FileAccess::WRITE, &err);
 	ERR_FAIL_COND_V_MSG(err != OK, ERR_CANT_CREATE, "Cannot create file '" + p_path + "'.");
 
 	AppxPackager packager;
 	packager.init(fa_pack);
 
-	FileAccess *src_f = nullptr;
-	zlib_filefunc_def io = zipio_create_io_from_file(&src_f);
+	Ref<FileAccess> io_fa;
+	zlib_filefunc_def io = zipio_create_io(&io_fa);
 
 	if (ep.step("Creating package...", 0)) {
 		return ERR_SKIP;
@@ -324,8 +339,11 @@ Error EditorExportPlatformUWP::export_project(const Ref<EditorExportPreset> &p_p
 		unz_file_info info;
 		char fname[16834];
 		ret = unzGetCurrentFileInfo(pkg, &info, fname, 16834, nullptr, 0, nullptr, 0);
+		if (ret != UNZ_OK) {
+			break;
+		}
 
-		String path = fname;
+		String path = String::utf8(fname);
 
 		if (path.ends_with("/")) {
 			// Ignore directories
@@ -376,7 +394,7 @@ Error EditorExportPlatformUWP::export_project(const Ref<EditorExportPreset> &p_p
 	Vector<String> cl = ((String)p_preset->get("command_line/extra_args")).strip_edges().split(" ");
 	for (int i = 0; i < cl.size(); i++) {
 		if (cl[i].strip_edges().length() == 0) {
-			cl.remove(i);
+			cl.remove_at(i);
 			i--;
 		}
 	}
@@ -416,7 +434,7 @@ Error EditorExportPlatformUWP::export_project(const Ref<EditorExportPreset> &p_p
 	EditorNode::progress_add_task("project_files", "Project Files", 100);
 	packager.set_progress_task("project_files");
 
-	err = export_project_files(p_preset, save_appx_file, &packager);
+	err = export_project_files(p_preset, p_debug, save_appx_file, &packager);
 
 	EditorNode::progress_end_task("project_files");
 
@@ -430,8 +448,8 @@ Error EditorExportPlatformUWP::export_project(const Ref<EditorExportPreset> &p_p
 
 #ifdef WINDOWS_ENABLED
 	// Sign with signtool
-	String signtool_path = EditorSettings::get_singleton()->get("export/uwp/signtool");
-	if (signtool_path == String()) {
+	String signtool_path = EDITOR_GET("export/uwp/signtool");
+	if (signtool_path.is_empty()) {
 		return OK;
 	}
 
@@ -442,9 +460,9 @@ Error EditorExportPlatformUWP::export_project(const Ref<EditorExportPreset> &p_p
 
 	static String algs[] = { "MD5", "SHA1", "SHA256" };
 
-	String cert_path = EditorSettings::get_singleton()->get("export/uwp/debug_certificate");
-	String cert_pass = EditorSettings::get_singleton()->get("export/uwp/debug_password");
-	int cert_alg = EditorSettings::get_singleton()->get("export/uwp/debug_algorithm");
+	String cert_path = EDITOR_GET("export/uwp/debug_certificate");
+	String cert_pass = EDITOR_GET("export/uwp/debug_password");
+	int cert_alg = EDITOR_GET("export/uwp/debug_algorithm");
 
 	if (!p_debug) {
 		cert_path = p_preset->get("signing/certificate");
@@ -452,7 +470,7 @@ Error EditorExportPlatformUWP::export_project(const Ref<EditorExportPreset> &p_p
 		cert_alg = p_preset->get("signing/algorithm");
 	}
 
-	if (cert_path == String()) {
+	if (cert_path.is_empty()) {
 		return OK; // Certificate missing, don't try to sign
 	}
 
@@ -483,16 +501,22 @@ Error EditorExportPlatformUWP::export_project(const Ref<EditorExportPreset> &p_p
 	return OK;
 }
 
-void EditorExportPlatformUWP::get_platform_features(List<String> *r_features) {
+void EditorExportPlatformUWP::get_platform_features(List<String> *r_features) const {
 	r_features->push_back("pc");
 	r_features->push_back("uwp");
 }
 
-void EditorExportPlatformUWP::resolve_platform_feature_priorities(const Ref<EditorExportPreset> &p_preset, Set<String> &p_features) {
+void EditorExportPlatformUWP::resolve_platform_feature_priorities(const Ref<EditorExportPreset> &p_preset, HashSet<String> &p_features) {
 }
 
 EditorExportPlatformUWP::EditorExportPlatformUWP() {
-	Ref<Image> img = memnew(Image(_uwp_logo));
-	logo.instantiate();
-	logo->create_from_image(img);
+#ifdef MODULE_SVG_ENABLED
+	Ref<Image> img = memnew(Image);
+	const bool upsample = !Math::is_equal_approx(Math::round(EDSCALE), EDSCALE);
+
+	ImageLoaderSVG img_loader;
+	img_loader.create_image_from_string(img, _uwp_logo_svg, EDSCALE, upsample, false);
+
+	logo = ImageTexture::create_from_image(img);
+#endif
 }

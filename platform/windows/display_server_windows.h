@@ -1,32 +1,32 @@
-/*************************************************************************/
-/*  display_server_windows.h                                             */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  display_server_windows.h                                              */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #ifndef DISPLAY_SERVER_WINDOWS_H
 #define DISPLAY_SERVER_WINDOWS_H
@@ -46,13 +46,10 @@
 #include "servers/rendering/renderer_compositor.h"
 #include "servers/rendering/renderer_rd/renderer_compositor_rd.h"
 #include "servers/rendering_server.h"
+#include "tts_windows.h"
 
 #ifdef XAUDIO2_ENABLED
 #include "drivers/xaudio2/audio_driver_xaudio2.h"
-#endif
-
-#if defined(OPENGL_ENABLED)
-#include "context_gl_windows.h"
 #endif
 
 #if defined(VULKAN_ENABLED)
@@ -60,9 +57,13 @@
 #include "platform/windows/vulkan_context_win.h"
 #endif
 
-#include <fcntl.h>
+#if defined(GLES3_ENABLED)
+#include "gl_manager_windows.h"
+#endif
+
 #include <io.h>
 #include <stdio.h>
+
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <windowsx.h>
@@ -81,9 +82,12 @@
 #define DVC_ROTATION 18
 
 #define CXO_MESSAGES 0x0004
+#define PK_STATUS 0x0002
 #define PK_NORMAL_PRESSURE 0x0400
 #define PK_TANGENT_PRESSURE 0x0800
 #define PK_ORIENTATION 0x1000
+
+#define TPS_INVERT 0x0010 /* 1.1 */
 
 typedef struct tagLOGCONTEXTW {
 	WCHAR lcName[40];
@@ -136,6 +140,7 @@ typedef struct tagORIENTATION {
 } ORIENTATION;
 
 typedef struct tagPACKET {
+	int pkStatus;
 	int pkNormalPressure;
 	int pkTangentPressure;
 	ORIENTATION pkOrientation;
@@ -147,6 +152,12 @@ typedef UINT(WINAPI *WTInfoPtr)(UINT p_category, UINT p_index, LPVOID p_output);
 typedef BOOL(WINAPI *WTPacketPtr)(HANDLE p_ctx, UINT p_param, LPVOID p_packets);
 typedef BOOL(WINAPI *WTEnablePtr)(HANDLE p_ctx, BOOL p_enable);
 
+typedef bool(WINAPI *ShouldAppsUseDarkModePtr)();
+typedef DWORD(WINAPI *GetImmersiveColorFromColorSetExPtr)(UINT dwImmersiveColorSet, UINT dwImmersiveColorType, bool bIgnoreHighContrast, UINT dwHighContrastCacheMode);
+typedef int(WINAPI *GetImmersiveColorTypeFromNamePtr)(const WCHAR *name);
+typedef int(WINAPI *GetImmersiveUserColorSetPreferencePtr)(bool bForceCheckRegistry, bool bSkipCheckOnFail);
+typedef HRESULT(WINAPI *RtlGetVersionPtr)(OSVERSIONINFOW *lpVersionInformation);
+
 // Windows Ink API
 #ifndef POINTER_STRUCTURES
 
@@ -156,6 +167,14 @@ typedef DWORD POINTER_INPUT_TYPE;
 typedef UINT32 POINTER_FLAGS;
 typedef UINT32 PEN_FLAGS;
 typedef UINT32 PEN_MASK;
+
+#ifndef PEN_FLAG_INVERTED
+#define PEN_FLAG_INVERTED 0x00000002
+#endif
+
+#ifndef PEN_FLAG_ERASER
+#define PEN_FLAG_ERASER 0x00000004
+#endif
 
 #ifndef PEN_MASK_PRESSURE
 #define PEN_MASK_PRESSURE 0x00000001
@@ -265,6 +284,14 @@ class DisplayServerWindows : public DisplayServer {
 
 	_THREAD_SAFE_CLASS_
 
+	// UXTheme API
+	static bool dark_title_available;
+	static bool ux_theme_available;
+	static ShouldAppsUseDarkModePtr ShouldAppsUseDarkMode;
+	static GetImmersiveColorFromColorSetExPtr GetImmersiveColorFromColorSetEx;
+	static GetImmersiveColorTypeFromNamePtr GetImmersiveColorTypeFromName;
+	static GetImmersiveUserColorSetPreferencePtr GetImmersiveUserColorSetPreference;
+
 	// WinTab API
 	static bool wintab_available;
 	static WTOpenPtr wintab_WTOpen;
@@ -282,8 +309,6 @@ class DisplayServerWindows : public DisplayServer {
 	String tablet_driver;
 	Vector<String> tablet_drivers;
 
-	void GetMaskBitmaps(HBITMAP hSourceBitmap, COLORREF clrTransparent, OUT HBITMAP &hAndMaskBitmap, OUT HBITMAP &hXorMaskBitmap);
-
 	enum {
 		KEY_EVENT_BUFFER_SIZE = 512
 	};
@@ -296,42 +321,46 @@ class DisplayServerWindows : public DisplayServer {
 		LPARAM lParam;
 	};
 
+	WindowID window_mouseover_id = INVALID_WINDOW_ID;
+
 	KeyEvent key_event_buffer[KEY_EVENT_BUFFER_SIZE];
 	int key_event_pos;
 
 	bool old_invalid;
-	bool outside;
 	int old_x, old_y;
 	Point2i center;
 
-#if defined(OPENGL_ENABLED)
-	ContextGL_Windows *context_gles2;
+#if defined(GLES3_ENABLED)
+	GLManager_Windows *gl_manager = nullptr;
 #endif
 
 #if defined(VULKAN_ENABLED)
-	VulkanContextWindows *context_vulkan;
-	RenderingDeviceVulkan *rendering_device_vulkan;
+	VulkanContextWindows *context_vulkan = nullptr;
+	RenderingDeviceVulkan *rendering_device_vulkan = nullptr;
 #endif
 
-	Map<int, Vector2> touch_state;
+	RBMap<int, Vector2> touch_state;
 
 	int pressrc;
 	HINSTANCE hInstance; // Holds The Instance Of The Application
 	String rendering_driver;
 	bool app_focused = false;
+	bool keep_screen_on = false;
+	HANDLE power_request;
+
+	TTS_Windows *tts = nullptr;
 
 	struct WindowData {
 		HWND hWnd;
-		//layered window
 
 		Vector<Vector2> mpath;
 
-		bool preserve_window_size = false;
 		bool pre_fs_valid = false;
 		RECT pre_fs_rect;
 		bool maximized = false;
 		bool minimized = false;
 		bool fullscreen = false;
+		bool multiwindow_fs = false;
 		bool borderless = false;
 		bool resizable = true;
 		bool window_focused = false;
@@ -339,6 +368,9 @@ class DisplayServerWindows : public DisplayServer {
 		bool always_on_top = false;
 		bool no_focus = false;
 		bool window_has_focus = false;
+		bool exclusive = false;
+		bool context_created = false;
+		bool mpass = false;
 
 		// Used to transfer data between events using timer.
 		WPARAM saved_wparam;
@@ -353,16 +385,14 @@ class DisplayServerWindows : public DisplayServer {
 		int min_pressure;
 		int max_pressure;
 		bool tilt_supported;
+		bool pen_inverted = false;
 		bool block_mm = false;
 
 		int last_pressure_update;
 		float last_pressure;
 		Vector2 last_tilt;
+		bool last_pen_inverted = false;
 
-		HBITMAP hBitmap; //DIB section for layered window
-		uint8_t *dib_data = nullptr;
-		Size2 dib_size;
-		HDC hDC_dib;
 		Size2 min_size;
 		Size2 max_size;
 		int width = 0, height = 0;
@@ -375,6 +405,9 @@ class DisplayServerWindows : public DisplayServer {
 		// IME
 		HIMC im_himc;
 		Vector2 im_position;
+		bool ime_active = false;
+		bool ime_in_progress = false;
+		bool ime_suppress_next_keyup = false;
 
 		bool layered_window = false;
 
@@ -385,14 +418,21 @@ class DisplayServerWindows : public DisplayServer {
 		Callable drop_files_callback;
 
 		WindowID transient_parent = INVALID_WINDOW_ID;
-		Set<WindowID> transient_children;
+		HashSet<WindowID> transient_children;
+
+		bool is_popup = false;
+		Rect2i parent_safe_rect;
 	};
 
-	JoypadWindows *joypad;
+	JoypadWindows *joypad = nullptr;
+	HHOOK mouse_monitor = nullptr;
+	List<WindowID> popup_list;
+	uint64_t time_since_popup = 0;
+	Ref<Image> icon;
 
 	WindowID _create_window(WindowMode p_mode, VSyncMode p_vsync_mode, uint32_t p_flags, const Rect2i &p_rect);
 	WindowID window_id_counter = MAIN_WINDOW_ID;
-	Map<WindowID, WindowData> windows;
+	RBMap<WindowID, WindowData> windows;
 
 	WindowID last_focused_window = INVALID_WINDOW_ID;
 
@@ -401,7 +441,7 @@ class DisplayServerWindows : public DisplayServer {
 	WNDPROC user_proc = nullptr;
 
 	void _send_window_event(const WindowData &wd, WindowEvent p_event);
-	void _get_window_style(bool p_main_window, bool p_fullscreen, bool p_borderless, bool p_resizable, bool p_maximized, bool p_no_activate_focus, DWORD &r_style, DWORD &r_style_ex);
+	void _get_window_style(bool p_main_window, bool p_fullscreen, bool p_multiwindow_fs, bool p_borderless, bool p_resizable, bool p_maximized, bool p_no_activate_focus, DWORD &r_style, DWORD &r_style_ex);
 
 	MouseMode mouse_mode;
 	int restore_mouse_trails = 0;
@@ -410,17 +450,18 @@ class DisplayServerWindows : public DisplayServer {
 	bool shift_mem = false;
 	bool control_mem = false;
 	bool meta_mem = false;
-	MouseButton last_button_state = MOUSE_BUTTON_NONE;
+	BitField<MouseButtonMask> last_button_state;
 	bool use_raw_input = false;
 	bool drop_events = false;
 	bool in_dispatch_input_event = false;
-	bool console_visible = false;
 
 	WNDCLASSEXW wc;
+	HBRUSH window_bkg_brush = nullptr;
+	uint32_t window_bkg_brush_color = 0;
 
 	HCURSOR cursors[CURSOR_MAX] = { nullptr };
 	CursorShape cursor_shape = CursorShape::CURSOR_ARROW;
-	Map<CursorShape, Vector<Variant>> cursors_cache;
+	RBMap<CursorShape, Vector<Variant>> cursors_cache;
 
 	void _drag_event(WindowID p_window, float p_x, float p_y, int idx);
 	void _touch_event(WindowID p_window, bool p_pressed, float p_x, float p_y, int idx);
@@ -431,6 +472,8 @@ class DisplayServerWindows : public DisplayServer {
 	void _update_real_mouse_position(WindowID p_window);
 
 	void _set_mouse_mode_impl(MouseMode p_mode);
+	WindowID _get_focused_window_or_popup() const;
+	void _register_raw_input_devices(WindowID p_target_window);
 
 	void _process_activate_event(WindowID p_window_id, WPARAM wParam, LPARAM lParam);
 	void _process_key_events();
@@ -438,31 +481,49 @@ class DisplayServerWindows : public DisplayServer {
 	static void _dispatch_input_events(const Ref<InputEvent> &p_event);
 	void _dispatch_input_event(const Ref<InputEvent> &p_event);
 
+	LRESULT _handle_early_window_message(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+	Point2i _get_screens_origin() const;
+
 public:
 	LRESULT WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+	LRESULT MouseProc(int code, WPARAM wParam, LPARAM lParam);
+
+	void popup_open(WindowID p_window);
+	void popup_close(WindowID p_window);
 
 	virtual bool has_feature(Feature p_feature) const override;
 	virtual String get_name() const override;
 
+	virtual bool tts_is_speaking() const override;
+	virtual bool tts_is_paused() const override;
+	virtual TypedArray<Dictionary> tts_get_voices() const override;
+
+	virtual void tts_speak(const String &p_text, const String &p_voice, int p_volume = 50, float p_pitch = 1.f, float p_rate = 1.f, int p_utterance_id = 0, bool p_interrupt = false) override;
+	virtual void tts_pause() override;
+	virtual void tts_resume() override;
+	virtual void tts_stop() override;
+
+	virtual bool is_dark_mode_supported() const override;
+	virtual bool is_dark_mode() const override;
+	virtual Color get_accent_color() const override;
+
 	virtual void mouse_set_mode(MouseMode p_mode) override;
 	virtual MouseMode mouse_get_mode() const override;
 
-	virtual void mouse_warp_to_position(const Point2i &p_to) override;
+	virtual void warp_mouse(const Point2i &p_position) override;
 	virtual Point2i mouse_get_position() const override;
-	virtual MouseButton mouse_get_button_state() const override;
+	virtual BitField<MouseButtonMask> mouse_get_button_state() const override;
 
 	virtual void clipboard_set(const String &p_text) override;
 	virtual String clipboard_get() const override;
 
 	virtual int get_screen_count() const override;
+	virtual int get_primary_screen() const override;
 	virtual Point2i screen_get_position(int p_screen = SCREEN_OF_MAIN_WINDOW) const override;
 	virtual Size2i screen_get_size(int p_screen = SCREEN_OF_MAIN_WINDOW) const override;
 	virtual Rect2i screen_get_usable_rect(int p_screen = SCREEN_OF_MAIN_WINDOW) const override;
 	virtual int screen_get_dpi(int p_screen = SCREEN_OF_MAIN_WINDOW) const override;
-	virtual bool screen_is_touchscreen(int p_screen = SCREEN_OF_MAIN_WINDOW) const override;
-
-	virtual void screen_set_orientation(ScreenOrientation p_orientation, int p_screen = SCREEN_OF_MAIN_WINDOW) override;
-	virtual ScreenOrientation screen_get_orientation(int p_screen = SCREEN_OF_MAIN_WINDOW) const override;
+	virtual float screen_get_refresh_rate(int p_screen = SCREEN_OF_MAIN_WINDOW) const override;
 
 	virtual void screen_set_keep_on(bool p_enable) override; //disable screensaver
 	virtual bool screen_is_kept_on() const override;
@@ -473,10 +534,17 @@ public:
 	virtual void show_window(WindowID p_window) override;
 	virtual void delete_sub_window(WindowID p_window) override;
 
+	virtual WindowID window_get_active_popup() const override;
+	virtual void window_set_popup_safe_rect(WindowID p_window, const Rect2i &p_rect) override;
+	virtual Rect2i window_get_popup_safe_rect(WindowID p_window) const override;
+
+	virtual int64_t window_get_native_handle(HandleType p_handle_type, WindowID p_window = MAIN_WINDOW_ID) const override;
+
 	virtual WindowID get_window_at_screen_position(const Point2i &p_position) const override;
 
 	virtual void window_attach_instance_id(ObjectID p_instance, WindowID p_window = MAIN_WINDOW_ID) override;
 	virtual ObjectID window_get_attached_instance_id(WindowID p_window = MAIN_WINDOW_ID) const override;
+	virtual void gl_window_make_current(DisplayServer::WindowID p_window_id) override;
 
 	virtual void window_set_rect_changed_callback(const Callable &p_callable, WindowID p_window = MAIN_WINDOW_ID) override;
 
@@ -493,9 +561,11 @@ public:
 	virtual void window_set_current_screen(int p_screen, WindowID p_window = MAIN_WINDOW_ID) override;
 
 	virtual Point2i window_get_position(WindowID p_window = MAIN_WINDOW_ID) const override;
+	virtual Point2i window_get_position_with_decorations(WindowID p_window = MAIN_WINDOW_ID) const override;
 	virtual void window_set_position(const Point2i &p_position, WindowID p_window = MAIN_WINDOW_ID) override;
 
 	virtual void window_set_transient(WindowID p_window, WindowID p_parent) override;
+	virtual void window_set_exclusive(WindowID p_window, bool p_exclusive) override;
 
 	virtual void window_set_max_size(const Size2i p_size, WindowID p_window = MAIN_WINDOW_ID) override;
 	virtual Size2i window_get_max_size(WindowID p_window = MAIN_WINDOW_ID) const override;
@@ -505,7 +575,7 @@ public:
 
 	virtual void window_set_size(const Size2i p_size, WindowID p_window = MAIN_WINDOW_ID) override;
 	virtual Size2i window_get_size(WindowID p_window = MAIN_WINDOW_ID) const override;
-	virtual Size2i window_get_real_size(WindowID p_window = MAIN_WINDOW_ID) const override; //wtf is this? should probable use proper name
+	virtual Size2i window_get_size_with_decorations(WindowID p_window = MAIN_WINDOW_ID) const override;
 
 	virtual void window_set_mode(WindowMode p_mode, WindowID p_window = MAIN_WINDOW_ID) override;
 	virtual WindowMode window_get_mode(WindowID p_window = MAIN_WINDOW_ID) const override;
@@ -525,15 +595,15 @@ public:
 	virtual void window_set_ime_active(const bool p_active, WindowID p_window = MAIN_WINDOW_ID) override;
 	virtual void window_set_ime_position(const Point2i &p_pos, WindowID p_window = MAIN_WINDOW_ID) override;
 
+	virtual Point2i ime_get_selection() const override;
+	virtual String ime_get_text() const override;
+
 	virtual void window_set_vsync_mode(DisplayServer::VSyncMode p_vsync_mode, WindowID p_window = MAIN_WINDOW_ID) override;
 	virtual DisplayServer::VSyncMode window_get_vsync_mode(WindowID p_vsync_mode) const override;
 
-	virtual void console_set_visible(bool p_enabled) override;
-	virtual bool is_console_visible() const override;
-
 	virtual void cursor_set_shape(CursorShape p_shape) override;
 	virtual CursorShape cursor_get_shape() const override;
-	virtual void cursor_set_custom_image(const RES &p_cursor, CursorShape p_shape = CURSOR_ARROW, const Vector2 &p_hotspot = Vector2()) override;
+	virtual void cursor_set_custom_image(const Ref<Resource> &p_cursor, CursorShape p_shape = CURSOR_ARROW, const Vector2 &p_hotspot = Vector2()) override;
 
 	virtual bool get_swap_cancel_ok() override;
 
@@ -564,11 +634,11 @@ public:
 
 	virtual void set_context(Context p_context) override;
 
-	static DisplayServer *create_func(const String &p_rendering_driver, WindowMode p_mode, VSyncMode p_vsync_mode, uint32_t p_flags, const Vector2i &p_resolution, Error &r_error);
+	static DisplayServer *create_func(const String &p_rendering_driver, WindowMode p_mode, VSyncMode p_vsync_mode, uint32_t p_flags, const Vector2i *p_position, const Vector2i &p_resolution, int p_screen, Error &r_error);
 	static Vector<String> get_rendering_drivers_func();
 	static void register_windows_driver();
 
-	DisplayServerWindows(const String &p_rendering_driver, WindowMode p_mode, VSyncMode p_vsync_mode, uint32_t p_flags, const Vector2i &p_resolution, Error &r_error);
+	DisplayServerWindows(const String &p_rendering_driver, WindowMode p_mode, VSyncMode p_vsync_mode, uint32_t p_flags, const Vector2i *p_position, const Vector2i &p_resolution, int p_screen, Error &r_error);
 	~DisplayServerWindows();
 };
 

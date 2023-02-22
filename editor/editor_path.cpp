@@ -1,37 +1,39 @@
-/*************************************************************************/
-/*  editor_path.cpp                                                      */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  editor_path.cpp                                                       */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #include "editor_path.h"
 
-#include "editor_node.h"
-#include "editor_scale.h"
+#include "editor/editor_data.h"
+#include "editor/editor_node.h"
+#include "editor/editor_scale.h"
+#include "editor/multi_node_edit.h"
 
 void EditorPath::_add_children_to_popup(Object *p_obj, int p_depth) {
 	if (p_depth > 8) {
@@ -57,7 +59,7 @@ void EditorPath::_add_children_to_popup(Object *p_obj, int p_depth) {
 			continue;
 		}
 
-		Ref<Texture2D> icon = EditorNode::get_singleton()->get_object_icon(obj);
+		Ref<Texture2D> obj_icon = EditorNode::get_singleton()->get_object_icon(obj);
 
 		String proper_name = "";
 		Vector<String> name_parts = E.name.split("/");
@@ -70,8 +72,8 @@ void EditorPath::_add_children_to_popup(Object *p_obj, int p_depth) {
 		}
 
 		int index = sub_objects_menu->get_item_count();
-		sub_objects_menu->add_icon_item(icon, proper_name, objects.size());
-		sub_objects_menu->set_item_h_offset(index, p_depth * 10 * EDSCALE);
+		sub_objects_menu->add_icon_item(obj_icon, proper_name, objects.size());
+		sub_objects_menu->set_item_indent(index, p_depth);
 		objects.push_back(obj->get_instance_id());
 
 		_add_children_to_popup(obj, p_depth + 1);
@@ -79,6 +81,11 @@ void EditorPath::_add_children_to_popup(Object *p_obj, int p_depth) {
 }
 
 void EditorPath::_show_popup() {
+	if (sub_objects_menu->is_visible()) {
+		sub_objects_menu->hide();
+		return;
+	}
+
 	sub_objects_menu->clear();
 
 	Size2 size = get_size();
@@ -115,14 +122,22 @@ void EditorPath::update_path() {
 			continue;
 		}
 
-		Ref<Texture2D> icon = EditorNode::get_singleton()->get_object_icon(obj);
-		if (icon.is_valid()) {
-			current_object_icon->set_texture(icon);
+		Ref<Texture2D> obj_icon;
+		if (Object::cast_to<MultiNodeEdit>(obj)) {
+			obj_icon = EditorNode::get_singleton()->get_class_icon(Object::cast_to<MultiNodeEdit>(obj)->get_edited_class_name());
+		} else {
+			obj_icon = EditorNode::get_singleton()->get_object_icon(obj);
+		}
+
+		if (obj_icon.is_valid()) {
+			current_object_icon->set_texture(obj_icon);
 		}
 
 		if (i == history->get_path_size() - 1) {
 			String name;
-			if (Object::cast_to<Resource>(obj)) {
+			if (obj->has_method("_get_editor_name")) {
+				name = obj->call("_get_editor_name");
+			} else if (Object::cast_to<Resource>(obj)) {
 				Resource *r = Object::cast_to<Resource>(obj);
 				if (r->get_path().is_resource_file()) {
 					name = r->get_path().get_file();
@@ -130,37 +145,37 @@ void EditorPath::update_path() {
 					name = r->get_name();
 				}
 
-				if (name == "") {
+				if (name.is_empty()) {
 					name = r->get_class();
 				}
 			} else if (obj->is_class("EditorDebuggerRemoteObject")) {
 				name = obj->call("get_title");
 			} else if (Object::cast_to<Node>(obj)) {
 				name = Object::cast_to<Node>(obj)->get_name();
-			} else if (Object::cast_to<Resource>(obj) && Object::cast_to<Resource>(obj)->get_name() != "") {
+			} else if (Object::cast_to<Resource>(obj) && !Object::cast_to<Resource>(obj)->get_name().is_empty()) {
 				name = Object::cast_to<Resource>(obj)->get_name();
 			} else {
 				name = obj->get_class();
 			}
 
-			current_object_label->set_text(" " + name); // An extra space so the text is not too close of the icon.
-			set_tooltip(obj->get_class());
+			current_object_label->set_text(name);
+			set_tooltip_text(obj->get_class());
 		}
 	}
 }
 
 void EditorPath::clear_path() {
 	set_disabled(true);
-	set_tooltip("");
+	set_tooltip_text("");
 
 	current_object_label->set_text("");
 	current_object_icon->set_texture(nullptr);
-	sub_objects_icon->set_visible(false);
+	sub_objects_icon->hide();
 }
 
 void EditorPath::enable_path() {
 	set_disabled(false);
-	sub_objects_icon->set_visible(true);
+	sub_objects_icon->show();
 }
 
 void EditorPath::_id_pressed(int p_idx) {
@@ -180,7 +195,7 @@ void EditorPath::_notification(int p_what) {
 		case NOTIFICATION_THEME_CHANGED: {
 			update_path();
 
-			sub_objects_icon->set_texture(get_theme_icon(SNAME("select_arrow"), SNAME("Tree")));
+			sub_objects_icon->set_texture(get_theme_icon(SNAME("arrow"), SNAME("OptionButton")));
 			current_object_label->add_theme_font_override("font", get_theme_font(SNAME("main"), SNAME("EditorFonts")));
 		} break;
 
@@ -193,11 +208,11 @@ void EditorPath::_notification(int p_what) {
 void EditorPath::_bind_methods() {
 }
 
-EditorPath::EditorPath(EditorHistory *p_history) {
+EditorPath::EditorPath(EditorSelectionHistory *p_history) {
 	history = p_history;
 
 	MarginContainer *main_mc = memnew(MarginContainer);
-	main_mc->set_anchors_and_offsets_preset(PRESET_WIDE);
+	main_mc->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
 	main_mc->add_theme_constant_override("margin_left", 4 * EDSCALE);
 	main_mc->add_theme_constant_override("margin_right", 6 * EDSCALE);
 	add_child(main_mc);
@@ -210,13 +225,12 @@ EditorPath::EditorPath(EditorHistory *p_history) {
 	main_hb->add_child(current_object_icon);
 
 	current_object_label = memnew(Label);
-	current_object_label->set_clip_text(true);
-	current_object_label->set_align(Label::ALIGN_LEFT);
+	current_object_label->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
 	current_object_label->set_h_size_flags(SIZE_EXPAND_FILL);
 	main_hb->add_child(current_object_label);
 
 	sub_objects_icon = memnew(TextureRect);
-	sub_objects_icon->set_visible(false);
+	sub_objects_icon->hide();
 	sub_objects_icon->set_stretch_mode(TextureRect::STRETCH_KEEP_CENTERED);
 	main_hb->add_child(sub_objects_icon);
 
@@ -225,5 +239,5 @@ EditorPath::EditorPath(EditorHistory *p_history) {
 	sub_objects_menu->connect("about_to_popup", callable_mp(this, &EditorPath::_about_to_show));
 	sub_objects_menu->connect("id_pressed", callable_mp(this, &EditorPath::_id_pressed));
 
-	set_tooltip(TTR("Open a list of sub-resources."));
+	set_tooltip_text(TTR("Open a list of sub-resources."));
 }

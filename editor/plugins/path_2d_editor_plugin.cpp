@@ -1,51 +1,53 @@
-/*************************************************************************/
-/*  path_2d_editor_plugin.cpp                                            */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  path_2d_editor_plugin.cpp                                             */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #include "path_2d_editor_plugin.h"
 
 #include "canvas_item_editor_plugin.h"
 #include "core/io/file_access.h"
 #include "core/os/keyboard.h"
+#include "editor/editor_node.h"
 #include "editor/editor_scale.h"
 #include "editor/editor_settings.h"
+#include "editor/editor_undo_redo_manager.h"
+#include "scene/gui/menu_button.h"
 
 void Path2DEditor::_notification(int p_what) {
 	switch (p_what) {
-		case NOTIFICATION_READY: {
-			//button_create->set_icon( get_icon("Edit","EditorIcons"));
-			//button_edit->set_icon( get_icon("MovePoint","EditorIcons"));
-			//set_pressed_button(button_edit);
-			//button_edit->set_pressed(true);
-
-		} break;
-		case NOTIFICATION_PHYSICS_PROCESS: {
+		case NOTIFICATION_ENTER_TREE:
+		case NOTIFICATION_THEME_CHANGED: {
+			curve_edit->set_icon(get_theme_icon(SNAME("CurveEdit"), SNAME("EditorIcons")));
+			curve_edit_curve->set_icon(get_theme_icon(SNAME("CurveCurve"), SNAME("EditorIcons")));
+			curve_create->set_icon(get_theme_icon(SNAME("CurveCreate"), SNAME("EditorIcons")));
+			curve_del->set_icon(get_theme_icon(SNAME("CurveDelete"), SNAME("EditorIcons")));
+			curve_close->set_icon(get_theme_icon(SNAME("CurveClose"), SNAME("EditorIcons")));
 		} break;
 	}
 }
@@ -88,7 +90,7 @@ bool Path2DEditor::forward_gui_input(const Ref<InputEvent> &p_event) {
 				real_t dist_to_p_in = gpoint.distance_to(xform.xform(curve->get_point_position(i) + curve->get_point_in(i)));
 
 				// Check for point movement start (for point + in/out controls).
-				if (mb->get_button_index() == MOUSE_BUTTON_LEFT) {
+				if (mb->get_button_index() == MouseButton::LEFT) {
 					if (mode == MODE_EDIT && !mb->is_shift_pressed() && dist_to_p < grab_threshold) {
 						// Points can only be moved in edit mode.
 
@@ -118,7 +120,8 @@ bool Path2DEditor::forward_gui_input(const Ref<InputEvent> &p_event) {
 				}
 
 				// Check for point deletion.
-				if ((mb->get_button_index() == MOUSE_BUTTON_RIGHT && mode == MODE_EDIT) || (mb->get_button_index() == MOUSE_BUTTON_LEFT && mode == MODE_DELETE)) {
+				EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
+				if ((mb->get_button_index() == MouseButton::RIGHT && mode == MODE_EDIT) || (mb->get_button_index() == MouseButton::LEFT && mode == MODE_DELETE)) {
 					if (dist_to_p < grab_threshold) {
 						undo_redo->create_action(TTR("Remove Point from Curve"));
 						undo_redo->add_do_method(curve.ptr(), "remove_point", i);
@@ -149,9 +152,10 @@ bool Path2DEditor::forward_gui_input(const Ref<InputEvent> &p_event) {
 		}
 
 		// Check for point creation.
-		if (mb->is_pressed() && mb->get_button_index() == MOUSE_BUTTON_LEFT && ((mb->is_command_pressed() && mode == MODE_EDIT) || mode == MODE_CREATE)) {
+		if (mb->is_pressed() && mb->get_button_index() == MouseButton::LEFT && ((mb->is_command_or_control_pressed() && mode == MODE_EDIT) || mode == MODE_CREATE)) {
 			Ref<Curve2D> curve = node->get_curve();
 
+			EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
 			undo_redo->create_action(TTR("Add Point to Curve"));
 			undo_redo->add_do_method(curve.ptr(), "add_point", cpoint);
 			undo_redo->add_undo_method(curve.ptr(), "remove_point", curve->get_point_count());
@@ -170,7 +174,7 @@ bool Path2DEditor::forward_gui_input(const Ref<InputEvent> &p_event) {
 		}
 
 		// Check for segment split.
-		if (mb->is_pressed() && mb->get_button_index() == MOUSE_BUTTON_LEFT && mode == MODE_EDIT && on_edge) {
+		if (mb->is_pressed() && mb->get_button_index() == MouseButton::LEFT && mode == MODE_EDIT && on_edge) {
 			Vector2 gpoint2 = mb->get_position();
 			Ref<Curve2D> curve = node->get_curve();
 
@@ -187,6 +191,7 @@ bool Path2DEditor::forward_gui_input(const Ref<InputEvent> &p_event) {
 				insertion_point = curve->get_point_count() - 2;
 			}
 
+			EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
 			undo_redo->create_action(TTR("Split Curve"));
 			undo_redo->add_do_method(curve.ptr(), "add_point", xform.affine_inverse().xform(gpoint2), Vector2(0, 0), Vector2(0, 0), insertion_point + 1);
 			undo_redo->add_undo_method(curve.ptr(), "remove_point", insertion_point + 1);
@@ -207,9 +212,10 @@ bool Path2DEditor::forward_gui_input(const Ref<InputEvent> &p_event) {
 		}
 
 		// Check for point movement completion.
-		if (!mb->is_pressed() && mb->get_button_index() == MOUSE_BUTTON_LEFT && action != ACTION_NONE) {
+		if (!mb->is_pressed() && mb->get_button_index() == MouseButton::LEFT && action != ACTION_NONE) {
 			Ref<Curve2D> curve = node->get_curve();
 
+			EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
 			Vector2 new_pos = moving_from + xform.affine_inverse().basis_xform(gpoint - moving_screen_from);
 			switch (action) {
 				case ACTION_NONE:
@@ -485,6 +491,7 @@ void Path2DEditor::_mode_selected(int p_mode) {
 			return;
 		}
 
+		EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
 		undo_redo->create_action(TTR("Remove Point from Curve"));
 		undo_redo->add_do_method(node->get_curve().ptr(), "add_point", begin);
 		undo_redo->add_undo_method(node->get_curve().ptr(), "remove_point", node->get_curve()->get_point_count());
@@ -516,10 +523,8 @@ void Path2DEditor::_handle_option_pressed(int p_option) {
 	}
 }
 
-Path2DEditor::Path2DEditor(EditorNode *p_editor) {
+Path2DEditor::Path2DEditor() {
 	canvas_item_editor = nullptr;
-	editor = p_editor;
-	undo_redo = editor->get_undo_redo();
 	mirror_handle_angle = true;
 	mirror_handle_length = true;
 	on_edge = false;
@@ -532,44 +537,44 @@ Path2DEditor::Path2DEditor(EditorNode *p_editor) {
 
 	sep = memnew(VSeparator);
 	base_hb->add_child(sep);
+
 	curve_edit = memnew(Button);
 	curve_edit->set_flat(true);
-	curve_edit->set_icon(EditorNode::get_singleton()->get_gui_base()->get_theme_icon(SNAME("CurveEdit"), SNAME("EditorIcons")));
 	curve_edit->set_toggle_mode(true);
 	curve_edit->set_focus_mode(Control::FOCUS_NONE);
-	curve_edit->set_tooltip(TTR("Select Points") + "\n" + TTR("Shift+Drag: Select Control Points") + "\n" + keycode_get_string(KEY_MASK_CMD) + TTR("Click: Add Point") + "\n" + TTR("Left Click: Split Segment (in curve)") + "\n" + TTR("Right Click: Delete Point"));
-	curve_edit->connect("pressed", callable_mp(this, &Path2DEditor::_mode_selected), varray(MODE_EDIT));
+	curve_edit->set_tooltip_text(TTR("Select Points") + "\n" + TTR("Shift+Drag: Select Control Points") + "\n" + keycode_get_string((Key)KeyModifierMask::CMD_OR_CTRL) + TTR("Click: Add Point") + "\n" + TTR("Left Click: Split Segment (in curve)") + "\n" + TTR("Right Click: Delete Point"));
+	curve_edit->connect("pressed", callable_mp(this, &Path2DEditor::_mode_selected).bind(MODE_EDIT));
 	base_hb->add_child(curve_edit);
+
 	curve_edit_curve = memnew(Button);
 	curve_edit_curve->set_flat(true);
-	curve_edit_curve->set_icon(EditorNode::get_singleton()->get_gui_base()->get_theme_icon(SNAME("CurveCurve"), SNAME("EditorIcons")));
 	curve_edit_curve->set_toggle_mode(true);
 	curve_edit_curve->set_focus_mode(Control::FOCUS_NONE);
-	curve_edit_curve->set_tooltip(TTR("Select Control Points (Shift+Drag)"));
-	curve_edit_curve->connect("pressed", callable_mp(this, &Path2DEditor::_mode_selected), varray(MODE_EDIT_CURVE));
+	curve_edit_curve->set_tooltip_text(TTR("Select Control Points (Shift+Drag)"));
+	curve_edit_curve->connect("pressed", callable_mp(this, &Path2DEditor::_mode_selected).bind(MODE_EDIT_CURVE));
 	base_hb->add_child(curve_edit_curve);
+
 	curve_create = memnew(Button);
 	curve_create->set_flat(true);
-	curve_create->set_icon(EditorNode::get_singleton()->get_gui_base()->get_theme_icon(SNAME("CurveCreate"), SNAME("EditorIcons")));
 	curve_create->set_toggle_mode(true);
 	curve_create->set_focus_mode(Control::FOCUS_NONE);
-	curve_create->set_tooltip(TTR("Add Point (in empty space)"));
-	curve_create->connect("pressed", callable_mp(this, &Path2DEditor::_mode_selected), varray(MODE_CREATE));
+	curve_create->set_tooltip_text(TTR("Add Point (in empty space)"));
+	curve_create->connect("pressed", callable_mp(this, &Path2DEditor::_mode_selected).bind(MODE_CREATE));
 	base_hb->add_child(curve_create);
+
 	curve_del = memnew(Button);
 	curve_del->set_flat(true);
-	curve_del->set_icon(EditorNode::get_singleton()->get_gui_base()->get_theme_icon(SNAME("CurveDelete"), SNAME("EditorIcons")));
 	curve_del->set_toggle_mode(true);
 	curve_del->set_focus_mode(Control::FOCUS_NONE);
-	curve_del->set_tooltip(TTR("Delete Point"));
-	curve_del->connect("pressed", callable_mp(this, &Path2DEditor::_mode_selected), varray(MODE_DELETE));
+	curve_del->set_tooltip_text(TTR("Delete Point"));
+	curve_del->connect("pressed", callable_mp(this, &Path2DEditor::_mode_selected).bind(MODE_DELETE));
 	base_hb->add_child(curve_del);
+
 	curve_close = memnew(Button);
 	curve_close->set_flat(true);
-	curve_close->set_icon(EditorNode::get_singleton()->get_gui_base()->get_theme_icon(SNAME("CurveClose"), SNAME("EditorIcons")));
 	curve_close->set_focus_mode(Control::FOCUS_NONE);
-	curve_close->set_tooltip(TTR("Close Curve"));
-	curve_close->connect("pressed", callable_mp(this, &Path2DEditor::_mode_selected), varray(ACTION_CLOSE));
+	curve_close->set_tooltip_text(TTR("Close Curve"));
+	curve_close->connect("pressed", callable_mp(this, &Path2DEditor::_mode_selected).bind(ACTION_CLOSE));
 	base_hb->add_child(curve_close);
 
 	PopupMenu *menu;
@@ -610,9 +615,8 @@ void Path2DEditorPlugin::make_visible(bool p_visible) {
 	}
 }
 
-Path2DEditorPlugin::Path2DEditorPlugin(EditorNode *p_node) {
-	editor = p_node;
-	path2d_editor = memnew(Path2DEditor(p_node));
+Path2DEditorPlugin::Path2DEditorPlugin() {
+	path2d_editor = memnew(Path2DEditor);
 	CanvasItemEditor::get_singleton()->add_control_to_menu_panel(path2d_editor);
 	path2d_editor->hide();
 }

@@ -1,32 +1,32 @@
-/*************************************************************************/
-/*  rendering_device_binds.h                                             */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  rendering_device_binds.h                                              */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #ifndef RENDERING_DEVICE_BINDS_H
 #define RENDERING_DEVICE_BINDS_H
@@ -66,7 +66,7 @@ public:
 	RD_SETGET(uint32_t, mipmaps)
 	RD_SETGET(RD::TextureType, texture_type)
 	RD_SETGET(RD::TextureSamples, samples)
-	RD_SETGET(uint32_t, usage_bits)
+	RD_SETGET(BitField<RenderingDevice::TextureUsageBits>, usage_bits)
 
 	void add_shareable_format(RD::DataFormat p_format) { base.shareable_formats.push_back(p_format); }
 	void remove_shareable_format(RD::DataFormat p_format) { base.shareable_formats.erase(p_format); }
@@ -329,7 +329,7 @@ protected:
 class RDShaderFile : public Resource {
 	GDCLASS(RDShaderFile, Resource)
 
-	Map<StringName, Ref<RDShaderSPIRV>> versions;
+	HashMap<StringName, Ref<RDShaderSPIRV>> versions;
 	String base_error;
 
 public:
@@ -368,13 +368,13 @@ public:
 	}
 
 	void print_errors(const String &p_file) {
-		if (base_error != "") {
+		if (!base_error.is_empty()) {
 			ERR_PRINT("Error parsing shader '" + p_file + "':\n\n" + base_error);
 		} else {
 			for (KeyValue<StringName, Ref<RDShaderSPIRV>> &E : versions) {
 				for (int i = 0; i < RD::SHADER_STAGE_MAX; i++) {
 					String error = E.value->get_stage_compile_error(RD::ShaderStage(i));
-					if (error != String()) {
+					if (!error.is_empty()) {
 						static const char *stage_str[RD::SHADER_STAGE_MAX] = {
 							"vertex",
 							"fragment",
@@ -407,10 +407,10 @@ protected:
 		List<Variant> keys;
 		p_versions.get_key_list(&keys);
 		for (const Variant &E : keys) {
-			StringName name = E;
+			StringName vname = E;
 			Ref<RDShaderSPIRV> bc = p_versions[E];
 			ERR_CONTINUE(bc.is_null());
-			versions[name] = bc;
+			versions[vname] = bc;
 		}
 
 		emit_changed();
@@ -427,7 +427,7 @@ protected:
 		ClassDB::bind_method(D_METHOD("_set_versions", "versions"), &RDShaderFile::_set_versions);
 		ClassDB::bind_method(D_METHOD("_get_versions"), &RDShaderFile::_get_versions);
 
-		ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "_versions", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NOEDITOR | PROPERTY_USAGE_INTERNAL), "_set_versions", "_get_versions");
+		ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "_versions", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NO_EDITOR | PROPERTY_USAGE_INTERNAL), "_set_versions", "_get_versions");
 		ADD_PROPERTY(PropertyInfo(Variant::STRING, "base_error"), "set_base_error", "get_base_error");
 	}
 };
@@ -441,23 +441,23 @@ public:
 	RD_SETGET(RD::UniformType, uniform_type)
 	RD_SETGET(int32_t, binding)
 
-	void add_id(const RID &p_id) { base.ids.push_back(p_id); }
-	void clear_ids() { base.ids.clear(); }
-	Array get_ids() const {
-		Array ids;
-		for (int i = 0; i < base.ids.size(); i++) {
-			ids.push_back(base.ids[i]);
+	void add_id(const RID &p_id) { base.append_id(p_id); }
+	void clear_ids() { base.clear_ids(); }
+	TypedArray<RID> get_ids() const {
+		TypedArray<RID> ids;
+		for (uint32_t i = 0; i < base.get_id_count(); i++) {
+			ids.push_back(base.get_id(i));
 		}
 		return ids;
 	}
 
 protected:
-	void _set_ids(const Array &p_ids) {
-		base.ids.clear();
+	void _set_ids(const TypedArray<RID> &p_ids) {
+		base.clear_ids();
 		for (int i = 0; i < p_ids.size(); i++) {
 			RID id = p_ids[i];
 			ERR_FAIL_COND(id.is_null());
-			base.ids.push_back(id);
+			base.append_id(id);
 		}
 	}
 	static void _bind_methods() {
@@ -517,7 +517,7 @@ public:
 	RD_SETGET(bool, wireframe)
 	RD_SETGET(RD::PolygonCullMode, cull_mode)
 	RD_SETGET(RD::PolygonFrontFace, front_face)
-	RD_SETGET(bool, depth_bias_enable)
+	RD_SETGET(bool, depth_bias_enabled)
 	RD_SETGET(float, depth_bias_constant_factor)
 	RD_SETGET(float, depth_bias_clamp)
 	RD_SETGET(float, depth_bias_slope_factor)
@@ -531,7 +531,7 @@ protected:
 		RD_BIND(Variant::BOOL, RDPipelineRasterizationState, wireframe);
 		RD_BIND(Variant::INT, RDPipelineRasterizationState, cull_mode);
 		RD_BIND(Variant::INT, RDPipelineRasterizationState, front_face);
-		RD_BIND(Variant::BOOL, RDPipelineRasterizationState, depth_bias_enable);
+		RD_BIND(Variant::BOOL, RDPipelineRasterizationState, depth_bias_enabled);
 		RD_BIND(Variant::FLOAT, RDPipelineRasterizationState, depth_bias_constant_factor);
 		RD_BIND(Variant::FLOAT, RDPipelineRasterizationState, depth_bias_clamp);
 		RD_BIND(Variant::FLOAT, RDPipelineRasterizationState, depth_bias_slope_factor);

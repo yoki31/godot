@@ -1,35 +1,36 @@
-/*************************************************************************/
-/*  importer_mesh.cpp                                                    */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  importer_mesh.cpp                                                     */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #include "importer_mesh.h"
 
+#include "core/io/marshalls.h"
 #include "core/math/random_pcg.h"
 #include "core/math/static_raycaster.h"
 #include "scene/resources/surface_tool.h"
@@ -154,7 +155,7 @@ Mesh::BlendShapeMode ImporterMesh::get_blend_shape_mode() const {
 	return blend_shape_mode;
 }
 
-void ImporterMesh::add_surface(Mesh::PrimitiveType p_primitive, const Array &p_arrays, const Array &p_blend_shapes, const Dictionary &p_lods, const Ref<Material> &p_material, const String &p_name, const uint32_t p_flags) {
+void ImporterMesh::add_surface(Mesh::PrimitiveType p_primitive, const Array &p_arrays, const TypedArray<Array> &p_blend_shapes, const Dictionary &p_lods, const Ref<Material> &p_material, const String &p_name, const uint32_t p_flags) {
 	ERR_FAIL_COND(p_blend_shapes.size() != blend_shapes.size());
 	ERR_FAIL_COND(p_arrays.size() != Mesh::ARRAY_MAX);
 	Surface s;
@@ -254,7 +255,20 @@ void ImporterMesh::set_surface_material(int p_surface, const Ref<Material> &p_ma
 	mesh.unref();
 }
 
-void ImporterMesh::generate_lods(float p_normal_merge_angle, float p_normal_split_angle) {
+#define VERTEX_SKIN_FUNC(bone_count, vert_idx, read_array, write_array, transform_array, bone_array, weight_array) \
+	Vector3 transformed_vert;                                                                                      \
+	for (unsigned int weight_idx = 0; weight_idx < bone_count; weight_idx++) {                                     \
+		int bone_idx = bone_array[vert_idx * bone_count + weight_idx];                                             \
+		float w = weight_array[vert_idx * bone_count + weight_idx];                                                \
+		if (w < FLT_EPSILON) {                                                                                     \
+			continue;                                                                                              \
+		}                                                                                                          \
+		ERR_FAIL_INDEX(bone_idx, static_cast<int>(transform_array.size()));                                        \
+		transformed_vert += transform_array[bone_idx].xform(read_array[vert_idx]) * w;                             \
+	}                                                                                                              \
+	write_array[vert_idx] = transformed_vert;
+
+void ImporterMesh::generate_lods(float p_normal_merge_angle, float p_normal_split_angle, Array p_bone_transform_array) {
 	if (!SurfaceTool::simplify_scale_func) {
 		return;
 	}
@@ -263,6 +277,12 @@ void ImporterMesh::generate_lods(float p_normal_merge_angle, float p_normal_spli
 	}
 	if (!SurfaceTool::optimize_vertex_cache_func) {
 		return;
+	}
+
+	LocalVector<Transform3D> bone_transform_vector;
+	for (int i = 0; i < p_bone_transform_array.size(); i++) {
+		ERR_FAIL_COND(p_bone_transform_array[i].get_type() != Variant::TRANSFORM3D);
+		bone_transform_vector.push_back(p_bone_transform_array[i]);
 	}
 
 	for (int i = 0; i < surfaces.size(); i++) {
@@ -275,6 +295,9 @@ void ImporterMesh::generate_lods(float p_normal_merge_angle, float p_normal_spli
 		PackedInt32Array indices = surfaces[i].arrays[RS::ARRAY_INDEX];
 		Vector<Vector3> normals = surfaces[i].arrays[RS::ARRAY_NORMAL];
 		Vector<Vector2> uvs = surfaces[i].arrays[RS::ARRAY_TEX_UV];
+		Vector<Vector2> uv2s = surfaces[i].arrays[RS::ARRAY_TEX_UV2];
+		Vector<int> bones = surfaces[i].arrays[RS::ARRAY_BONES];
+		Vector<float> weights = surfaces[i].arrays[RS::ARRAY_WEIGHTS];
 
 		unsigned int index_count = indices.size();
 		unsigned int vertex_count = vertices.size();
@@ -287,7 +310,7 @@ void ImporterMesh::generate_lods(float p_normal_merge_angle, float p_normal_spli
 		const int *indices_ptr = indices.ptr();
 
 		if (normals.is_empty()) {
-			normals.resize(vertices.size());
+			normals.resize(index_count);
 			Vector3 *n_ptr = normals.ptrw();
 			for (unsigned int j = 0; j < index_count; j += 3) {
 				const Vector3 &v0 = vertices_ptr[indices_ptr[j + 0]];
@@ -300,12 +323,28 @@ void ImporterMesh::generate_lods(float p_normal_merge_angle, float p_normal_spli
 			}
 		}
 
-		float normal_merge_threshold = Math::cos(Math::deg2rad(p_normal_merge_angle));
-		float normal_pre_split_threshold = Math::cos(Math::deg2rad(MIN(180.0f, p_normal_split_angle * 2.0f)));
-		float normal_split_threshold = Math::cos(Math::deg2rad(p_normal_split_angle));
+		if (bones.size() > 0 && weights.size() && bone_transform_vector.size() > 0) {
+			Vector3 *vertices_ptrw = vertices.ptrw();
+
+			// Apply bone transforms to regular surface.
+			unsigned int bone_weight_length = surfaces[i].flags & Mesh::ARRAY_FLAG_USE_8_BONE_WEIGHTS ? 8 : 4;
+
+			const int *bo = bones.ptr();
+			const float *we = weights.ptr();
+
+			for (unsigned int j = 0; j < vertex_count; j++) {
+				VERTEX_SKIN_FUNC(bone_weight_length, j, vertices_ptr, vertices_ptrw, bone_transform_vector, bo, we)
+			}
+
+			vertices_ptr = vertices.ptr();
+		}
+
+		float normal_merge_threshold = Math::cos(Math::deg_to_rad(p_normal_merge_angle));
+		float normal_pre_split_threshold = Math::cos(Math::deg_to_rad(MIN(180.0f, p_normal_split_angle * 2.0f)));
+		float normal_split_threshold = Math::cos(Math::deg_to_rad(p_normal_split_angle));
 		const Vector3 *normals_ptr = normals.ptr();
 
-		Map<Vector3, LocalVector<Pair<int, int>>> unique_vertices;
+		HashMap<Vector3, LocalVector<Pair<int, int>>> unique_vertices;
 
 		LocalVector<int> vertex_remap;
 		LocalVector<int> vertex_inverse_remap;
@@ -313,22 +352,24 @@ void ImporterMesh::generate_lods(float p_normal_merge_angle, float p_normal_spli
 		LocalVector<Vector3> merged_normals;
 		LocalVector<int> merged_normals_counts;
 		const Vector2 *uvs_ptr = uvs.ptr();
+		const Vector2 *uv2s_ptr = uv2s.ptr();
 
 		for (unsigned int j = 0; j < vertex_count; j++) {
 			const Vector3 &v = vertices_ptr[j];
 			const Vector3 &n = normals_ptr[j];
 
-			Map<Vector3, LocalVector<Pair<int, int>>>::Element *E = unique_vertices.find(v);
+			HashMap<Vector3, LocalVector<Pair<int, int>>>::Iterator E = unique_vertices.find(v);
 
 			if (E) {
-				const LocalVector<Pair<int, int>> &close_verts = E->get();
+				const LocalVector<Pair<int, int>> &close_verts = E->value;
 
 				bool found = false;
-				for (unsigned int k = 0; k < close_verts.size(); k++) {
-					const Pair<int, int> &idx = close_verts[k];
-
-					// TODO check more attributes?
-					if ((!uvs_ptr || uvs_ptr[j].distance_squared_to(uvs_ptr[idx.second]) < CMP_EPSILON2) && normals[idx.second].dot(n) > normal_merge_threshold) {
+				for (const Pair<int, int> &idx : close_verts) {
+					bool is_uvs_close = (!uvs_ptr || uvs_ptr[j].distance_squared_to(uvs_ptr[idx.second]) < CMP_EPSILON2);
+					bool is_uv2s_close = (!uv2s_ptr || uv2s_ptr[j].distance_squared_to(uv2s_ptr[idx.second]) < CMP_EPSILON2);
+					ERR_FAIL_INDEX(idx.second, normals.size());
+					bool is_normals_close = normals[idx.second].dot(n) > normal_merge_threshold;
+					if (is_uvs_close && is_uv2s_close && is_normals_close) {
 						vertex_remap.push_back(idx.first);
 						merged_normals[idx.first] += normals[idx.second];
 						merged_normals_counts[idx.first]++;
@@ -382,9 +423,8 @@ void ImporterMesh::generate_lods(float p_normal_merge_angle, float p_normal_spli
 			normal_weights[j] = 2.0; // Give some weight to normal preservation, may be worth exposing as an import setting
 		}
 
-		const float max_mesh_error = FLT_MAX; // We don't want to limit by error, just by index target
-		float scale = SurfaceTool::simplify_scale_func((const float *)merged_vertices_ptr, merged_vertex_count, sizeof(Vector3));
-		float mesh_error = 0.0f;
+		Vector<float> merged_vertices_f32 = vector3_to_float32_array(merged_vertices_ptr, merged_vertex_count);
+		float scale = SurfaceTool::simplify_scale_func(merged_vertices_f32.ptr(), merged_vertex_count, sizeof(float) * 3);
 
 		unsigned int index_target = 12; // Start with the smallest target, 4 triangles
 		unsigned int last_index_count = 0;
@@ -404,18 +444,34 @@ void ImporterMesh::generate_lods(float p_normal_merge_angle, float p_normal_spli
 			raycaster->commit();
 		}
 
+		const float max_mesh_error = FLT_MAX; // We don't want to limit by error, just by index target
+		float mesh_error = 0.0f;
+
 		while (index_target < index_count) {
 			PackedInt32Array new_indices;
 			new_indices.resize(index_count);
 
-			size_t new_index_count = SurfaceTool::simplify_with_attrib_func((unsigned int *)new_indices.ptrw(), (const uint32_t *)merged_indices_ptr, index_count, (const float *)merged_vertices_ptr, merged_vertex_count, sizeof(Vector3), index_target, max_mesh_error, &mesh_error, (float *)merged_normals.ptr(), normal_weights.ptr(), 3);
+			Vector<float> merged_normals_f32 = vector3_to_float32_array(merged_normals.ptr(), merged_normals.size());
+			const int simplify_options = SurfaceTool::SIMPLIFY_LOCK_BORDER;
+
+			size_t new_index_count = SurfaceTool::simplify_with_attrib_func(
+					(unsigned int *)new_indices.ptrw(),
+					(const uint32_t *)merged_indices_ptr, index_count,
+					merged_vertices_f32.ptr(), merged_vertex_count,
+					sizeof(float) * 3, // Vertex stride
+					index_target,
+					max_mesh_error,
+					simplify_options,
+					&mesh_error,
+					merged_normals_f32.ptr(),
+					normal_weights.ptr(), 3);
 
 			if (new_index_count < last_index_count * 1.5f) {
 				index_target = index_target * 1.5f;
 				continue;
 			}
 
-			if (new_index_count <= 0 || (new_index_count >= (index_count * 0.75f))) {
+			if (new_index_count == 0 || (new_index_count >= (index_count * 0.75f))) {
 				break;
 			}
 
@@ -485,7 +541,7 @@ void ImporterMesh::generate_lods(float p_normal_merge_angle, float p_normal_spli
 				raycaster->intersect(rays);
 
 				LocalVector<Vector3> ray_normals;
-				LocalVector<float> ray_normal_weights;
+				LocalVector<real_t> ray_normal_weights;
 
 				ray_normals.resize(new_index_count);
 				ray_normal_weights.resize(new_index_count);
@@ -517,10 +573,10 @@ void ImporterMesh::generate_lods(float p_normal_merge_angle, float p_normal_spli
 					Vector3 normal = n0 * w + n1 * u + n2 * v;
 
 					Vector2 orig_uv = ray_uvs[j];
-					float orig_bary[3] = { 1.0f - orig_uv.x - orig_uv.y, orig_uv.x, orig_uv.y };
+					const real_t orig_bary[3] = { 1.0f - orig_uv.x - orig_uv.y, orig_uv.x, orig_uv.y };
 					for (int k = 0; k < 3; k++) {
 						int idx = orig_tri_id * 3 + k;
-						float weight = orig_bary[k];
+						real_t weight = orig_bary[k];
 						ray_normals[idx] += normal * weight;
 						ray_normal_weights[idx] += weight;
 					}
@@ -543,8 +599,7 @@ void ImporterMesh::generate_lods(float p_normal_merge_angle, float p_normal_spli
 					const LocalVector<int> &corners = vertex_corners[j];
 					const Vector3 &vertex_normal = normals_ptr[j];
 
-					for (unsigned int k = 0; k < corners.size(); k++) {
-						const int &corner_idx = corners[k];
+					for (const int &corner_idx : corners) {
 						const Vector3 &ray_normal = ray_normals[corner_idx];
 
 						if (ray_normal.length_squared() < CMP_EPSILON2) {
@@ -579,8 +634,8 @@ void ImporterMesh::generate_lods(float p_normal_merge_angle, float p_normal_spli
 							split_vertex_indices.push_back(j);
 							split_vertex_normals.push_back(n);
 							int new_idx = split_vertex_count++;
-							for (unsigned int l = 0; l < group_indices.size(); l++) {
-								new_indices_ptr[group_indices[l]] = new_idx;
+							for (const int &index : group_indices) {
+								new_indices_ptr[index] = new_idx;
 							}
 						}
 					}
@@ -653,7 +708,7 @@ Ref<ArrayMesh> ImporterMesh::get_mesh(const Ref<ArrayMesh> &p_base) {
 			if (surfaces[i].material.is_valid()) {
 				mesh->surface_set_material(mesh->get_surface_count() - 1, surfaces[i].material);
 			}
-			if (surfaces[i].name != String()) {
+			if (!surfaces[i].name.is_empty()) {
 				mesh->surface_set_name(mesh->get_surface_count() - 1, surfaces[i].name);
 			}
 		}
@@ -702,15 +757,15 @@ void ImporterMesh::create_shadow_mesh() {
 		Vector<Vector3> vertices = surfaces[i].arrays[RS::ARRAY_VERTEX];
 		int vertex_count = vertices.size();
 		{
-			Map<Vector3, int> unique_vertices;
+			HashMap<Vector3, int> unique_vertices;
 			const Vector3 *vptr = vertices.ptr();
 			for (int j = 0; j < vertex_count; j++) {
 				const Vector3 &v = vptr[j];
 
-				Map<Vector3, int>::Element *E = unique_vertices.find(v);
+				HashMap<Vector3, int>::Iterator E = unique_vertices.find(v);
 
 				if (E) {
-					vertex_remap.push_back(E->get());
+					vertex_remap.push_back(E->value);
 				} else {
 					int vcount = unique_vertices.size();
 					unique_vertices[v] = vcount;
@@ -787,9 +842,9 @@ void ImporterMesh::_set_data(const Dictionary &p_data) {
 			ERR_CONTINUE(prim >= Mesh::PRIMITIVE_MAX);
 			Array arr = s["arrays"];
 			Dictionary lods;
-			String name;
+			String surf_name;
 			if (s.has("name")) {
-				name = s["name"];
+				surf_name = s["name"];
 			}
 			if (s.has("lods")) {
 				lods = s["lods"];
@@ -806,7 +861,7 @@ void ImporterMesh::_set_data(const Dictionary &p_data) {
 			if (s.has("flags")) {
 				flags = s["flags"];
 			}
-			add_surface(prim, arr, b_shapes, lods, material, name, flags);
+			add_surface(prim, arr, b_shapes, lods, material, surf_name, flags);
 		}
 	}
 }
@@ -839,7 +894,7 @@ Dictionary ImporterMesh::_get_data() const {
 			d["material"] = surfaces[i].material;
 		}
 
-		if (surfaces[i].name != String()) {
+		if (!surfaces[i].name.is_empty()) {
 			d["name"] = surfaces[i].name;
 		}
 
@@ -894,16 +949,16 @@ Vector<Ref<Shape3D>> ImporterMesh::convex_decompose(const Mesh::ConvexDecomposit
 	Vector<uint32_t> indices;
 	indices.resize(face_count * 3);
 	{
-		Map<Vector3, uint32_t> vertex_map;
+		HashMap<Vector3, uint32_t> vertex_map;
 		Vector3 *vertex_w = vertices.ptrw();
 		uint32_t *index_w = indices.ptrw();
 		for (int i = 0; i < face_count; i++) {
 			for (int j = 0; j < 3; j++) {
 				const Vector3 &vertex = faces[i].vertex[j];
-				Map<Vector3, uint32_t>::Element *found_vertex = vertex_map.find(vertex);
+				HashMap<Vector3, uint32_t>::Iterator found_vertex = vertex_map.find(vertex);
 				uint32_t index;
 				if (found_vertex) {
-					index = found_vertex->get();
+					index = found_vertex->value;
 				} else {
 					index = ++vertex_count;
 					vertex_map[vertex] = index;
@@ -929,10 +984,10 @@ Vector<Ref<Shape3D>> ImporterMesh::convex_decompose(const Mesh::ConvexDecomposit
 	return ret;
 }
 
-Ref<Shape3D> ImporterMesh::create_trimesh_shape() const {
+Ref<ConcavePolygonShape3D> ImporterMesh::create_trimesh_shape() const {
 	Vector<Face3> faces = get_faces();
 	if (faces.size() == 0) {
-		return Ref<Shape3D>();
+		return Ref<ConcavePolygonShape3D>();
 	}
 
 	Vector<Vector3> face_points;
@@ -956,7 +1011,7 @@ Ref<NavigationMesh> ImporterMesh::create_navigation_mesh() {
 		return Ref<NavigationMesh>();
 	}
 
-	Map<Vector3, int> unique_vertices;
+	HashMap<Vector3, int> unique_vertices;
 	LocalVector<int> face_indices;
 
 	for (int i = 0; i < faces.size(); i++) {
@@ -1005,6 +1060,8 @@ struct EditorSceneFormatImporterMeshLightmapSurface {
 	String name;
 };
 
+static const uint32_t custom_shift[RS::ARRAY_CUSTOM_COUNT] = { Mesh::ARRAY_FORMAT_CUSTOM0_SHIFT, Mesh::ARRAY_FORMAT_CUSTOM1_SHIFT, Mesh::ARRAY_FORMAT_CUSTOM2_SHIFT, Mesh::ARRAY_FORMAT_CUSTOM3_SHIFT };
+
 Error ImporterMesh::lightmap_unwrap_cached(const Transform3D &p_base_transform, float p_texel_size, const Vector<uint8_t> &p_src_cache, Vector<uint8_t> &r_dst_cache) {
 	ERR_FAIL_COND_V(!array_mesh_lightmap_unwrap_callback, ERR_UNCONFIGURED);
 	ERR_FAIL_COND_V_MSG(blend_shapes.size() != 0, ERR_UNAVAILABLE, "Can't unwrap mesh with blend shapes.");
@@ -1019,7 +1076,7 @@ Error ImporterMesh::lightmap_unwrap_cached(const Transform3D &p_base_transform, 
 
 	// Keep only the scale
 	Basis basis = p_base_transform.get_basis();
-	Vector3 scale = Vector3(basis.get_axis(0).length(), basis.get_axis(1).length(), basis.get_axis(2).length());
+	Vector3 scale = Vector3(basis.get_column(0).length(), basis.get_column(1).length(), basis.get_column(2).length());
 
 	Transform3D transform;
 	transform.scale(scale);
@@ -1041,6 +1098,10 @@ Error ImporterMesh::lightmap_unwrap_cached(const Transform3D &p_base_transform, 
 		int vc = rvertices.size();
 
 		PackedVector3Array rnormals = arrays[Mesh::ARRAY_NORMAL];
+
+		if (!rnormals.size()) {
+			continue;
+		}
 
 		int vertex_ofs = vertices.size() / 3;
 
@@ -1082,6 +1143,9 @@ Error ImporterMesh::lightmap_unwrap_cached(const Transform3D &p_base_transform, 
 
 		} else {
 			for (int j = 0; j < ic / 3; j++) {
+				ERR_FAIL_INDEX_V(rindices[j * 3 + 0], rvertices.size(), ERR_INVALID_DATA);
+				ERR_FAIL_INDEX_V(rindices[j * 3 + 1], rvertices.size(), ERR_INVALID_DATA);
+				ERR_FAIL_INDEX_V(rindices[j * 3 + 2], rvertices.size(), ERR_INVALID_DATA);
 				Vector3 p0 = transform.xform(rvertices[rindices[j * 3 + 0]]);
 				Vector3 p1 = transform.xform(rvertices[rindices[j * 3 + 1]]);
 				Vector3 p2 = transform.xform(rvertices[rindices[j * 3 + 2]]);
@@ -1118,9 +1182,6 @@ Error ImporterMesh::lightmap_unwrap_cached(const Transform3D &p_base_transform, 
 		return ERR_CANT_CREATE;
 	}
 
-	//remove surfaces
-	clear();
-
 	//create surfacetools for each surface..
 	LocalVector<Ref<SurfaceTool>> surfaces_tools;
 
@@ -1130,8 +1191,15 @@ Error ImporterMesh::lightmap_unwrap_cached(const Transform3D &p_base_transform, 
 		st->begin(Mesh::PRIMITIVE_TRIANGLES);
 		st->set_material(lightmap_surfaces[i].material);
 		st->set_meta("name", lightmap_surfaces[i].name);
+
+		for (int custom_i = 0; custom_i < RS::ARRAY_CUSTOM_COUNT; custom_i++) {
+			st->set_custom_format(custom_i, (SurfaceTool::CustomFormat)((lightmap_surfaces[i].format >> custom_shift[custom_i]) & RS::ARRAY_FORMAT_CUSTOM_MASK));
+		}
 		surfaces_tools.push_back(st); //stay there
 	}
+
+	//remove surfaces
+	clear();
 
 	print_verbose("Mesh: Gen indices: " + itos(gen_index_count));
 
@@ -1169,6 +1237,11 @@ Error ImporterMesh::lightmap_unwrap_cached(const Transform3D &p_base_transform, 
 			if (lightmap_surfaces[surface].format & Mesh::ARRAY_FORMAT_WEIGHTS) {
 				surfaces_tools[surface]->set_weights(v.weights);
 			}
+			for (int custom_i = 0; custom_i < RS::ARRAY_CUSTOM_COUNT; custom_i++) {
+				if ((lightmap_surfaces[surface].format >> custom_shift[custom_i]) & RS::ARRAY_FORMAT_CUSTOM_MASK) {
+					surfaces_tools[surface]->set_custom(custom_i, v.custom[custom_i]);
+				}
+			}
 
 			Vector2 uv2(gen_uvs[gen_indices[i + j] * 2 + 0], gen_uvs[gen_indices[i + j] * 2 + 1]);
 			surfaces_tools[surface]->set_uv2(uv2);
@@ -1178,10 +1251,11 @@ Error ImporterMesh::lightmap_unwrap_cached(const Transform3D &p_base_transform, 
 	}
 
 	//generate surfaces
-	for (unsigned int i = 0; i < surfaces_tools.size(); i++) {
-		surfaces_tools[i]->index();
-		Array arrays = surfaces_tools[i]->commit_to_arrays();
-		add_surface(surfaces_tools[i]->get_primitive(), arrays, Array(), Dictionary(), surfaces_tools[i]->get_material(), surfaces_tools[i]->get_meta("name"));
+	for (int i = 0; i < lightmap_surfaces.size(); i++) {
+		Ref<SurfaceTool> &tool = surfaces_tools[i];
+		tool->index();
+		Array arrays = tool->commit_to_arrays();
+		add_surface(tool->get_primitive_type(), arrays, Array(), Dictionary(), tool->get_material(), tool->get_meta("name"), lightmap_surfaces[i].format);
 	}
 
 	set_lightmap_size_hint(Size2(size_x, size_y));
@@ -1218,7 +1292,7 @@ void ImporterMesh::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_blend_shape_mode", "mode"), &ImporterMesh::set_blend_shape_mode);
 	ClassDB::bind_method(D_METHOD("get_blend_shape_mode"), &ImporterMesh::get_blend_shape_mode);
 
-	ClassDB::bind_method(D_METHOD("add_surface", "primitive", "arrays", "blend_shapes", "lods", "material", "name", "flags"), &ImporterMesh::add_surface, DEFVAL(Array()), DEFVAL(Dictionary()), DEFVAL(Ref<Material>()), DEFVAL(String()), DEFVAL(0));
+	ClassDB::bind_method(D_METHOD("add_surface", "primitive", "arrays", "blend_shapes", "lods", "material", "name", "flags"), &ImporterMesh::add_surface, DEFVAL(TypedArray<Array>()), DEFVAL(Dictionary()), DEFVAL(Ref<Material>()), DEFVAL(String()), DEFVAL(0));
 
 	ClassDB::bind_method(D_METHOD("get_surface_count"), &ImporterMesh::get_surface_count);
 	ClassDB::bind_method(D_METHOD("get_surface_primitive_type", "surface_idx"), &ImporterMesh::get_surface_primitive_type);
@@ -1234,6 +1308,7 @@ void ImporterMesh::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_surface_name", "surface_idx", "name"), &ImporterMesh::set_surface_name);
 	ClassDB::bind_method(D_METHOD("set_surface_material", "surface_idx", "material"), &ImporterMesh::set_surface_material);
 
+	ClassDB::bind_method(D_METHOD("generate_lods", "normal_merge_angle", "normal_split_angle", "bone_transform_array"), &ImporterMesh::generate_lods);
 	ClassDB::bind_method(D_METHOD("get_mesh", "base_mesh"), &ImporterMesh::get_mesh, DEFVAL(Ref<ArrayMesh>()));
 	ClassDB::bind_method(D_METHOD("clear"), &ImporterMesh::clear);
 
@@ -1243,5 +1318,5 @@ void ImporterMesh::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_lightmap_size_hint", "size"), &ImporterMesh::set_lightmap_size_hint);
 	ClassDB::bind_method(D_METHOD("get_lightmap_size_hint"), &ImporterMesh::get_lightmap_size_hint);
 
-	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "_data", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NOEDITOR), "_set_data", "_get_data");
+	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "_data", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NO_EDITOR), "_set_data", "_get_data");
 }

@@ -1,32 +1,32 @@
-/*************************************************************************/
-/*  context_egl_uwp.cpp                                                  */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  context_egl_uwp.cpp                                                   */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #include "context_egl_uwp.h"
 
@@ -36,26 +36,26 @@ using Platform::Exception;
 
 void ContextEGL_UWP::release_current() {
 	eglMakeCurrent(mEglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, mEglContext);
-};
+}
 
 void ContextEGL_UWP::make_current() {
 	eglMakeCurrent(mEglDisplay, mEglSurface, mEglSurface, mEglContext);
-};
+}
 
 int ContextEGL_UWP::get_window_width() {
 	return width;
-};
+}
 
 int ContextEGL_UWP::get_window_height() {
 	return height;
-};
+}
 
 void ContextEGL_UWP::reset() {
 	cleanup();
 
 	window = CoreWindow::GetForCurrentThread();
 	initialize();
-};
+}
 
 void ContextEGL_UWP::swap_buffers() {
 	if (eglSwapBuffers(mEglDisplay, mEglSurface) != EGL_TRUE) {
@@ -66,7 +66,7 @@ void ContextEGL_UWP::swap_buffers() {
 
 		// tell rasterizer to reload textures and stuff?
 	}
-};
+}
 
 Error ContextEGL_UWP::initialize() {
 	EGLint configAttribList[] = {
@@ -170,7 +170,7 @@ Error ContextEGL_UWP::initialize() {
 		}
 	} catch (...) {
 		return FAILED;
-	};
+	}
 
 	mEglDisplay = display;
 	mEglSurface = surface;
@@ -180,7 +180,7 @@ Error ContextEGL_UWP::initialize() {
 	eglQuerySurface(display, surface, EGL_HEIGHT, &height);
 
 	return OK;
-};
+}
 
 void ContextEGL_UWP::cleanup() {
 	if (mEglDisplay != EGL_NO_DISPLAY && mEglSurface != EGL_NO_SURFACE) {
@@ -197,7 +197,7 @@ void ContextEGL_UWP::cleanup() {
 		eglTerminate(mEglDisplay);
 		mEglDisplay = EGL_NO_DISPLAY;
 	}
-};
+}
 
 ContextEGL_UWP::ContextEGL_UWP(CoreWindow ^ p_window, Driver p_driver) :
 		mEglDisplay(EGL_NO_DISPLAY),
@@ -209,4 +209,4 @@ ContextEGL_UWP::ContextEGL_UWP(CoreWindow ^ p_window, Driver p_driver) :
 
 ContextEGL_UWP::~ContextEGL_UWP() {
 	cleanup();
-};
+}

@@ -1,32 +1,32 @@
-/*************************************************************************/
-/*  gradient.h                                                           */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  gradient.h                                                            */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #ifndef GRADIENT_H
 #define GRADIENT_H
@@ -38,6 +38,12 @@ class Gradient : public Resource {
 	OBJ_SAVE_TYPE(Gradient);
 
 public:
+	enum InterpolationMode {
+		GRADIENT_INTERPOLATE_LINEAR,
+		GRADIENT_INTERPOLATE_CONSTANT,
+		GRADIENT_INTERPOLATE_CUBIC,
+	};
+
 	struct Point {
 		float offset = 0.0;
 		Color color;
@@ -49,6 +55,8 @@ public:
 private:
 	Vector<Point> points;
 	bool is_sorted = true;
+	InterpolationMode interpolation_mode = GRADIENT_INTERPOLATE_LINEAR;
+
 	_FORCE_INLINE_ void _update_sorting() {
 		if (!is_sorted) {
 			points.sort();
@@ -65,9 +73,9 @@ public:
 
 	void add_point(float p_offset, const Color &p_color);
 	void remove_point(int p_index);
-
-	void set_points(Vector<Point> &p_points);
+	void set_points(const Vector<Point> &p_points);
 	Vector<Point> &get_points();
+	void reverse();
 
 	void set_offset(int pos, const float offset);
 	float get_offset(int pos);
@@ -81,6 +89,9 @@ public:
 	void set_colors(const Vector<Color> &p_colors);
 	Vector<Color> get_colors() const;
 
+	void set_interpolation_mode(InterpolationMode p_interp_mode);
+	InterpolationMode get_interpolation_mode();
+
 	_FORCE_INLINE_ Color get_color_at_offset(float p_offset) {
 		if (points.is_empty()) {
 			return Color(0, 0, 0, 1);
@@ -88,7 +99,7 @@ public:
 
 		_update_sorting();
 
-		//binary search
+		// Binary search.
 		int low = 0;
 		int high = points.size() - 1;
 		int middle = 0;
@@ -111,7 +122,7 @@ public:
 			}
 		}
 
-		//return interpolated value
+		// Return sampled value.
 		if (points[middle].offset > p_offset) {
 			middle--;
 		}
@@ -125,10 +136,44 @@ public:
 		}
 		const Point &pointFirst = points[first];
 		const Point &pointSecond = points[second];
-		return pointFirst.color.lerp(pointSecond.color, (p_offset - pointFirst.offset) / (pointSecond.offset - pointFirst.offset));
+
+		switch (interpolation_mode) {
+			case GRADIENT_INTERPOLATE_LINEAR: {
+				return pointFirst.color.lerp(pointSecond.color, (p_offset - pointFirst.offset) / (pointSecond.offset - pointFirst.offset));
+			} break;
+			case GRADIENT_INTERPOLATE_CONSTANT: {
+				return pointFirst.color;
+			} break;
+			case GRADIENT_INTERPOLATE_CUBIC: {
+				int p0 = first - 1;
+				int p3 = second + 1;
+				if (p3 >= points.size()) {
+					p3 = second;
+				}
+				if (p0 < 0) {
+					p0 = first;
+				}
+				const Point &pointP0 = points[p0];
+				const Point &pointP3 = points[p3];
+
+				float x = (p_offset - pointFirst.offset) / (pointSecond.offset - pointFirst.offset);
+				float r = Math::cubic_interpolate(pointFirst.color.r, pointSecond.color.r, pointP0.color.r, pointP3.color.r, x);
+				float g = Math::cubic_interpolate(pointFirst.color.g, pointSecond.color.g, pointP0.color.g, pointP3.color.g, x);
+				float b = Math::cubic_interpolate(pointFirst.color.b, pointSecond.color.b, pointP0.color.b, pointP3.color.b, x);
+				float a = Math::cubic_interpolate(pointFirst.color.a, pointSecond.color.a, pointP0.color.a, pointP3.color.a, x);
+
+				return Color(r, g, b, a);
+			} break;
+			default: {
+				// Fallback to linear interpolation.
+				return pointFirst.color.lerp(pointSecond.color, (p_offset - pointFirst.offset) / (pointSecond.offset - pointFirst.offset));
+			}
+		}
 	}
 
-	int get_points_count() const;
+	int get_point_count() const;
 };
+
+VARIANT_ENUM_CAST(Gradient::InterpolationMode);
 
 #endif // GRADIENT_H

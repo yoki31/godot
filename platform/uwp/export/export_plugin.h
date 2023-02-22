@@ -1,32 +1,32 @@
-/*************************************************************************/
-/*  export_plugin.h                                                      */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  export_plugin.h                                                       */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #ifndef UWP_EXPORT_PLUGIN_H
 #define UWP_EXPORT_PLUGIN_H
@@ -39,8 +39,9 @@
 #include "core/io/zip_io.h"
 #include "core/object/class_db.h"
 #include "core/version.h"
-#include "editor/editor_export.h"
 #include "editor/editor_node.h"
+#include "editor/editor_paths.h"
+#include "editor/export/editor_export_platform.h"
 
 #include "thirdparty/minizip/unzip.h"
 #include "thirdparty/minizip/zip.h"
@@ -88,12 +89,6 @@ class EditorExportPlatformUWP : public EditorExportPlatform {
 	GDCLASS(EditorExportPlatformUWP, EditorExportPlatform);
 
 	Ref<ImageTexture> logo;
-
-	enum Platform {
-		ARM,
-		X86,
-		X64
-	};
 
 	bool _valid_resource_name(const String &p_name) const {
 		if (p_name.is_empty()) {
@@ -190,7 +185,7 @@ class EditorExportPlatformUWP : public EditorExportPlatform {
 		return false;
 	}
 
-	bool _valid_image(const StreamTexture2D *p_image, int p_width, int p_height) const {
+	bool _valid_image(const CompressedTexture2D *p_image, int p_width, int p_height) const {
 		if (!p_image) {
 			return false;
 		}
@@ -214,11 +209,11 @@ class EditorExportPlatformUWP : public EditorExportPlatform {
 		String version = itos(p_preset->get("version/major")) + "." + itos(p_preset->get("version/minor")) + "." + itos(p_preset->get("version/build")) + "." + itos(p_preset->get("version/revision"));
 		result = result.replace("$version_string$", version);
 
-		Platform arch = (Platform)(int)p_preset->get("architecture/target");
-		String architecture = arch == ARM ? "arm" : (arch == X86 ? "x86" : "x64");
+		String arch = p_preset->get("binary_format/architecture");
+		String architecture = arch == "arm32" ? "arm" : (arch == "x86_32" ? "x86" : "x64");
 		result = result.replace("$architecture$", architecture);
 
-		result = result.replace("$display_name$", String(p_preset->get("package/display_name")).is_empty() ? (String)ProjectSettings::get_singleton()->get("application/config/name") : String(p_preset->get("package/display_name")));
+		result = result.replace("$display_name$", String(p_preset->get("package/display_name")).is_empty() ? (String)GLOBAL_GET("application/config/name") : String(p_preset->get("package/display_name")));
 
 		result = result.replace("$publisher_display_name$", p_preset->get("package/publisher_display_name"));
 		result = result.replace("$app_description$", p_preset->get("package/description"));
@@ -310,22 +305,22 @@ class EditorExportPlatformUWP : public EditorExportPlatform {
 
 	Vector<uint8_t> _get_image_data(const Ref<EditorExportPreset> &p_preset, const String &p_path) {
 		Vector<uint8_t> data;
-		StreamTexture2D *texture = nullptr;
+		CompressedTexture2D *texture = nullptr;
 
 		if (p_path.find("StoreLogo") != -1) {
-			texture = p_preset->get("images/store_logo").is_zero() ? nullptr : Object::cast_to<StreamTexture2D>(((Object *)p_preset->get("images/store_logo")));
+			texture = p_preset->get("images/store_logo").is_zero() ? nullptr : Object::cast_to<CompressedTexture2D>(((Object *)p_preset->get("images/store_logo")));
 		} else if (p_path.find("Square44x44Logo") != -1) {
-			texture = p_preset->get("images/square44x44_logo").is_zero() ? nullptr : Object::cast_to<StreamTexture2D>(((Object *)p_preset->get("images/square44x44_logo")));
+			texture = p_preset->get("images/square44x44_logo").is_zero() ? nullptr : Object::cast_to<CompressedTexture2D>(((Object *)p_preset->get("images/square44x44_logo")));
 		} else if (p_path.find("Square71x71Logo") != -1) {
-			texture = p_preset->get("images/square71x71_logo").is_zero() ? nullptr : Object::cast_to<StreamTexture2D>(((Object *)p_preset->get("images/square71x71_logo")));
+			texture = p_preset->get("images/square71x71_logo").is_zero() ? nullptr : Object::cast_to<CompressedTexture2D>(((Object *)p_preset->get("images/square71x71_logo")));
 		} else if (p_path.find("Square150x150Logo") != -1) {
-			texture = p_preset->get("images/square150x150_logo").is_zero() ? nullptr : Object::cast_to<StreamTexture2D>(((Object *)p_preset->get("images/square150x150_logo")));
+			texture = p_preset->get("images/square150x150_logo").is_zero() ? nullptr : Object::cast_to<CompressedTexture2D>(((Object *)p_preset->get("images/square150x150_logo")));
 		} else if (p_path.find("Square310x310Logo") != -1) {
-			texture = p_preset->get("images/square310x310_logo").is_zero() ? nullptr : Object::cast_to<StreamTexture2D>(((Object *)p_preset->get("images/square310x310_logo")));
+			texture = p_preset->get("images/square310x310_logo").is_zero() ? nullptr : Object::cast_to<CompressedTexture2D>(((Object *)p_preset->get("images/square310x310_logo")));
 		} else if (p_path.find("Wide310x150Logo") != -1) {
-			texture = p_preset->get("images/wide310x150_logo").is_zero() ? nullptr : Object::cast_to<StreamTexture2D>(((Object *)p_preset->get("images/wide310x150_logo")));
+			texture = p_preset->get("images/wide310x150_logo").is_zero() ? nullptr : Object::cast_to<CompressedTexture2D>(((Object *)p_preset->get("images/wide310x150_logo")));
 		} else if (p_path.find("SplashScreen") != -1) {
-			texture = p_preset->get("images/splash_screen").is_zero() ? nullptr : Object::cast_to<StreamTexture2D>(((Object *)p_preset->get("images/splash_screen")));
+			texture = p_preset->get("images/splash_screen").is_zero() ? nullptr : Object::cast_to<CompressedTexture2D>(((Object *)p_preset->get("images/splash_screen")));
 		} else {
 			ERR_PRINT("Unable to load logo");
 		}
@@ -334,7 +329,7 @@ class EditorExportPlatformUWP : public EditorExportPlatform {
 			return data;
 		}
 
-		String tmp_path = EditorPaths::get_singleton()->get_cache_dir().plus_file("uwp_tmp_logo.png");
+		String tmp_path = EditorPaths::get_singleton()->get_cache_dir().path_join("uwp_tmp_logo.png");
 
 		Error err = texture->get_image()->save_png(tmp_path);
 
@@ -345,21 +340,21 @@ class EditorExportPlatformUWP : public EditorExportPlatform {
 			ERR_FAIL_V_MSG(data, err_string);
 		}
 
-		FileAccess *f = FileAccess::open(tmp_path, FileAccess::READ, &err);
+		{
+			Ref<FileAccess> f = FileAccess::open(tmp_path, FileAccess::READ, &err);
 
-		if (err != OK) {
-			String err_string = "Couldn't open temp logo file.";
-			// Cleanup generated file.
-			DirAccess::remove_file_or_error(tmp_path);
-			EditorNode::add_io_error(err_string);
-			ERR_FAIL_V_MSG(data, err_string);
+			if (err != OK) {
+				String err_string = "Couldn't open temp logo file.";
+				// Cleanup generated file.
+				DirAccess::remove_file_or_error(tmp_path);
+				EditorNode::add_io_error(err_string);
+				ERR_FAIL_V_MSG(data, err_string);
+			}
+
+			data.resize(f->get_length());
+			f->get_buffer(data.ptrw(), data.size());
 		}
 
-		data.resize(f->get_length());
-		f->get_buffer(data.ptrw(), data.size());
-
-		f->close();
-		memdelete(f);
 		DirAccess::remove_file_or_error(tmp_path);
 
 		return data;
@@ -367,15 +362,15 @@ class EditorExportPlatformUWP : public EditorExportPlatform {
 
 	static bool _should_compress_asset(const String &p_path, const Vector<uint8_t> &p_data) {
 		/* TODO: This was copied verbatim from Android export. It should be
-    * refactored to the parent class and also be used for .zip export.
-    */
+		 * refactored to the parent class and also be used for .zip export.
+		 */
 
 		/*
-    *  By not compressing files with little or not benefit in doing so,
-    *  a performance gain is expected at runtime. Moreover, if the APK is
-    *  zip-aligned, assets stored as they are can be efficiently read by
-    *  Android by memory-mapping them.
-    */
+		 *  By not compressing files with little or not benefit in doing so,
+		 *  a performance gain is expected at runtime. Moreover, if the APK is
+		 *  zip-aligned, assets stored as they are can be efficiently read by
+		 *  Android by memory-mapping them.
+		 */
 
 		// -- Unconditional uncompress to mimic AAPT plus some other
 
@@ -392,7 +387,7 @@ class EditorExportPlatformUWP : public EditorExportPlatform {
 			".webp", // Same reasoning as .png
 			".cfb", // Don't let small config files slow-down startup
 			".scn", // Binary scenes are usually already compressed
-			".stex", // Streamable textures are usually already compressed
+			".ctex", // Streamable textures are usually already compressed
 			// Trailer for easier processing
 			nullptr
 		};
@@ -416,7 +411,7 @@ class EditorExportPlatformUWP : public EditorExportPlatform {
 	}
 
 	static Error save_appx_file(void *p_userdata, const String &p_path, const Vector<uint8_t> &p_data, int p_file, int p_total, const Vector<String> &p_enc_in_filters, const Vector<String> &p_enc_ex_filters, const Vector<uint8_t> &p_key) {
-		AppxPackager *packager = (AppxPackager *)p_userdata;
+		AppxPackager *packager = static_cast<AppxPackager *>(p_userdata);
 		String dst_path = p_path.replace_first("res://", "game/");
 
 		return packager->add_file(dst_path, p_data.ptr(), p_data.size(), p_file, p_total, _should_compress_asset(p_path, p_data));
@@ -430,19 +425,20 @@ public:
 
 	virtual Ref<Texture2D> get_logo() const override;
 
-	virtual void get_preset_features(const Ref<EditorExportPreset> &p_preset, List<String> *r_features) override;
+	virtual void get_preset_features(const Ref<EditorExportPreset> &p_preset, List<String> *r_features) const override;
 
 	virtual void get_export_options(List<ExportOption> *r_options) override;
 
-	virtual bool can_export(const Ref<EditorExportPreset> &p_preset, String &r_error, bool &r_missing_templates) const override;
+	virtual bool has_valid_export_configuration(const Ref<EditorExportPreset> &p_preset, String &r_error, bool &r_missing_templates) const override;
+	virtual bool has_valid_project_configuration(const Ref<EditorExportPreset> &p_preset, String &r_error) const override;
 
 	virtual Error export_project(const Ref<EditorExportPreset> &p_preset, bool p_debug, const String &p_path, int p_flags = 0) override;
 
-	virtual void get_platform_features(List<String> *r_features) override;
+	virtual void get_platform_features(List<String> *r_features) const override;
 
-	virtual void resolve_platform_feature_priorities(const Ref<EditorExportPreset> &p_preset, Set<String> &p_features) override;
+	virtual void resolve_platform_feature_priorities(const Ref<EditorExportPreset> &p_preset, HashSet<String> &p_features) override;
 
 	EditorExportPlatformUWP();
 };
 
-#endif
+#endif // UWP_EXPORT_PLUGIN_H

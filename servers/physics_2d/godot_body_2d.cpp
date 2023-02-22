@@ -1,32 +1,32 @@
-/*************************************************************************/
-/*  godot_body_2d.cpp                                                    */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  godot_body_2d.cpp                                                     */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #include "godot_body_2d.h"
 
@@ -44,7 +44,7 @@ void GodotBody2D::update_mass_properties() {
 	//update shapes and motions
 
 	switch (mode) {
-		case PhysicsServer2D::BODY_MODE_DYNAMIC: {
+		case PhysicsServer2D::BODY_MODE_RIGID: {
 			real_t total_area = 0;
 			for (int i = 0; i < get_shape_count(); i++) {
 				if (is_shape_disabled(i)) {
@@ -65,10 +65,10 @@ void GodotBody2D::update_mass_properties() {
 
 						real_t area = get_shape_aabb(i).get_area();
 
-						real_t mass = area * this->mass / total_area;
+						real_t mass_new = area * mass / total_area;
 
 						// NOTE: we assume that the shape origin is also its center of mass.
-						center_of_mass_local += mass * get_shape_transform(i).get_origin();
+						center_of_mass_local += mass_new * get_shape_transform(i).get_origin();
 					}
 
 					center_of_mass_local /= mass;
@@ -90,12 +90,12 @@ void GodotBody2D::update_mass_properties() {
 						continue;
 					}
 
-					real_t mass = area * this->mass / total_area;
+					real_t mass_new = area * mass / total_area;
 
 					Transform2D mtx = get_shape_transform(i);
 					Vector2 scale = mtx.get_scale();
 					Vector2 shape_origin = mtx.get_origin() - center_of_mass_local;
-					inertia += shape->get_moment_of_inertia(mass, scale) + mass * shape_origin.length_squared();
+					inertia += shape->get_moment_of_inertia(mass_new, scale) + mass_new * shape_origin.length_squared();
 				}
 			}
 
@@ -113,7 +113,7 @@ void GodotBody2D::update_mass_properties() {
 			_inv_inertia = 0;
 			_inv_mass = 0;
 		} break;
-		case PhysicsServer2D::BODY_MODE_DYNAMIC_LINEAR: {
+		case PhysicsServer2D::BODY_MODE_RIGID_LINEAR: {
 			_inv_inertia = 0;
 			_inv_mass = 1.0 / mass;
 
@@ -160,7 +160,7 @@ void GodotBody2D::set_param(PhysicsServer2D::BodyParameter p_param, const Varian
 			real_t mass_value = p_value;
 			ERR_FAIL_COND(mass_value <= 0);
 			mass = mass_value;
-			if (mode >= PhysicsServer2D::BODY_MODE_DYNAMIC) {
+			if (mode >= PhysicsServer2D::BODY_MODE_RIGID) {
 				_mass_properties_changed();
 			}
 		} break;
@@ -168,13 +168,13 @@ void GodotBody2D::set_param(PhysicsServer2D::BodyParameter p_param, const Varian
 			real_t inertia_value = p_value;
 			if (inertia_value <= 0.0) {
 				calculate_inertia = true;
-				if (mode == PhysicsServer2D::BODY_MODE_DYNAMIC) {
+				if (mode == PhysicsServer2D::BODY_MODE_RIGID) {
 					_mass_properties_changed();
 				}
 			} else {
 				calculate_inertia = false;
 				inertia = inertia_value;
-				if (mode == PhysicsServer2D::BODY_MODE_DYNAMIC) {
+				if (mode == PhysicsServer2D::BODY_MODE_RIGID) {
 					_inv_inertia = 1.0 / inertia;
 				}
 			}
@@ -185,7 +185,18 @@ void GodotBody2D::set_param(PhysicsServer2D::BodyParameter p_param, const Varian
 			_update_transform_dependent();
 		} break;
 		case PhysicsServer2D::BODY_PARAM_GRAVITY_SCALE: {
+			if (Math::is_zero_approx(gravity_scale)) {
+				wakeup();
+			}
 			gravity_scale = p_value;
+		} break;
+		case PhysicsServer2D::BODY_PARAM_LINEAR_DAMP_MODE: {
+			int mode_value = p_value;
+			linear_damp_mode = (PhysicsServer2D::BodyDampMode)mode_value;
+		} break;
+		case PhysicsServer2D::BODY_PARAM_ANGULAR_DAMP_MODE: {
+			int mode_value = p_value;
+			angular_damp_mode = (PhysicsServer2D::BodyDampMode)mode_value;
 		} break;
 		case PhysicsServer2D::BODY_PARAM_LINEAR_DAMP: {
 			linear_damp = p_value;
@@ -213,10 +224,16 @@ Variant GodotBody2D::get_param(PhysicsServer2D::BodyParameter p_param) const {
 			return inertia;
 		}
 		case PhysicsServer2D::BODY_PARAM_CENTER_OF_MASS: {
-			return center_of_mass;
+			return center_of_mass_local;
 		}
 		case PhysicsServer2D::BODY_PARAM_GRAVITY_SCALE: {
 			return gravity_scale;
+		}
+		case PhysicsServer2D::BODY_PARAM_LINEAR_DAMP_MODE: {
+			return linear_damp_mode;
+		}
+		case PhysicsServer2D::BODY_PARAM_ANGULAR_DAMP_MODE: {
+			return angular_damp_mode;
 		}
 		case PhysicsServer2D::BODY_PARAM_LINEAR_DAMP: {
 			return linear_damp;
@@ -250,7 +267,7 @@ void GodotBody2D::set_mode(PhysicsServer2D::BodyMode p_mode) {
 				first_time_kinematic = true;
 			}
 		} break;
-		case PhysicsServer2D::BODY_MODE_DYNAMIC: {
+		case PhysicsServer2D::BODY_MODE_RIGID: {
 			_inv_mass = mass > 0 ? (1.0 / mass) : 0;
 			if (!calculate_inertia) {
 				_inv_inertia = 1.0 / inertia;
@@ -260,7 +277,7 @@ void GodotBody2D::set_mode(PhysicsServer2D::BodyMode p_mode) {
 			set_active(true);
 
 		} break;
-		case PhysicsServer2D::BODY_MODE_DYNAMIC_LINEAR: {
+		case PhysicsServer2D::BODY_MODE_RIGID_LINEAR: {
 			_inv_mass = mass > 0 ? (1.0 / mass) : 0;
 			_inv_inertia = 0;
 			angular_velocity = 0;
@@ -341,7 +358,7 @@ void GodotBody2D::set_state(PhysicsServer2D::BodyState p_state, const Variant &p
 		} break;
 		case PhysicsServer2D::BODY_STATE_CAN_SLEEP: {
 			can_sleep = p_variant;
-			if (mode >= PhysicsServer2D::BODY_MODE_DYNAMIC && !active && !can_sleep) {
+			if (mode >= PhysicsServer2D::BODY_MODE_RIGID && !active && !can_sleep) {
 				set_active(true);
 			}
 
@@ -396,15 +413,6 @@ void GodotBody2D::set_space(GodotSpace2D *p_space) {
 	}
 }
 
-void GodotBody2D::_compute_area_gravity_and_damping(const GodotArea2D *p_area) {
-	Vector2 area_gravity;
-	p_area->compute_gravity(get_transform().get_origin(), area_gravity);
-	gravity += area_gravity;
-
-	area_linear_damp += p_area->get_linear_damp();
-	area_angular_damp += p_area->get_angular_damp();
-}
-
 void GodotBody2D::_update_transform_dependent() {
 	center_of_mass = get_transform().basis_xform(center_of_mass_local);
 }
@@ -414,61 +422,135 @@ void GodotBody2D::integrate_forces(real_t p_step) {
 		return;
 	}
 
-	GodotArea2D *def_area = get_space()->get_default_area();
-	// GodotArea2D *damp_area = def_area;
-	ERR_FAIL_COND(!def_area);
+	ERR_FAIL_COND(!get_space());
 
 	int ac = areas.size();
+
+	bool gravity_done = false;
+	bool linear_damp_done = false;
+	bool angular_damp_done = false;
+
 	bool stopped = false;
+
 	gravity = Vector2(0, 0);
-	area_angular_damp = 0;
-	area_linear_damp = 0;
+
+	total_linear_damp = 0.0;
+	total_angular_damp = 0.0;
+
+	// Combine gravity and damping from overlapping areas in priority order.
 	if (ac) {
 		areas.sort();
 		const AreaCMP *aa = &areas[0];
-		// damp_area = aa[ac-1].area;
 		for (int i = ac - 1; i >= 0 && !stopped; i--) {
-			PhysicsServer2D::AreaSpaceOverrideMode mode = aa[i].area->get_space_override_mode();
-			switch (mode) {
-				case PhysicsServer2D::AREA_SPACE_OVERRIDE_COMBINE:
-				case PhysicsServer2D::AREA_SPACE_OVERRIDE_COMBINE_REPLACE: {
-					_compute_area_gravity_and_damping(aa[i].area);
-					stopped = mode == PhysicsServer2D::AREA_SPACE_OVERRIDE_COMBINE_REPLACE;
-				} break;
-				case PhysicsServer2D::AREA_SPACE_OVERRIDE_REPLACE:
-				case PhysicsServer2D::AREA_SPACE_OVERRIDE_REPLACE_COMBINE: {
-					gravity = Vector2(0, 0);
-					area_angular_damp = 0;
-					area_linear_damp = 0;
-					_compute_area_gravity_and_damping(aa[i].area);
-					stopped = mode == PhysicsServer2D::AREA_SPACE_OVERRIDE_REPLACE;
-				} break;
-				default: {
+			if (!gravity_done) {
+				PhysicsServer2D::AreaSpaceOverrideMode area_gravity_mode = (PhysicsServer2D::AreaSpaceOverrideMode)(int)aa[i].area->get_param(PhysicsServer2D::AREA_PARAM_GRAVITY_OVERRIDE_MODE);
+				if (area_gravity_mode != PhysicsServer2D::AREA_SPACE_OVERRIDE_DISABLED) {
+					Vector2 area_gravity;
+					aa[i].area->compute_gravity(get_transform().get_origin(), area_gravity);
+					switch (area_gravity_mode) {
+						case PhysicsServer2D::AREA_SPACE_OVERRIDE_COMBINE:
+						case PhysicsServer2D::AREA_SPACE_OVERRIDE_COMBINE_REPLACE: {
+							gravity += area_gravity;
+							gravity_done = area_gravity_mode == PhysicsServer2D::AREA_SPACE_OVERRIDE_COMBINE_REPLACE;
+						} break;
+						case PhysicsServer2D::AREA_SPACE_OVERRIDE_REPLACE:
+						case PhysicsServer2D::AREA_SPACE_OVERRIDE_REPLACE_COMBINE: {
+							gravity = area_gravity;
+							gravity_done = area_gravity_mode == PhysicsServer2D::AREA_SPACE_OVERRIDE_REPLACE;
+						} break;
+						default: {
+						}
+					}
 				}
 			}
+			if (!linear_damp_done) {
+				PhysicsServer2D::AreaSpaceOverrideMode area_linear_damp_mode = (PhysicsServer2D::AreaSpaceOverrideMode)(int)aa[i].area->get_param(PhysicsServer2D::AREA_PARAM_LINEAR_DAMP_OVERRIDE_MODE);
+				if (area_linear_damp_mode != PhysicsServer2D::AREA_SPACE_OVERRIDE_DISABLED) {
+					real_t area_linear_damp = aa[i].area->get_linear_damp();
+					switch (area_linear_damp_mode) {
+						case PhysicsServer2D::AREA_SPACE_OVERRIDE_COMBINE:
+						case PhysicsServer2D::AREA_SPACE_OVERRIDE_COMBINE_REPLACE: {
+							total_linear_damp += area_linear_damp;
+							linear_damp_done = area_linear_damp_mode == PhysicsServer2D::AREA_SPACE_OVERRIDE_COMBINE_REPLACE;
+						} break;
+						case PhysicsServer2D::AREA_SPACE_OVERRIDE_REPLACE:
+						case PhysicsServer2D::AREA_SPACE_OVERRIDE_REPLACE_COMBINE: {
+							total_linear_damp = area_linear_damp;
+							linear_damp_done = area_linear_damp_mode == PhysicsServer2D::AREA_SPACE_OVERRIDE_REPLACE;
+						} break;
+						default: {
+						}
+					}
+				}
+			}
+			if (!angular_damp_done) {
+				PhysicsServer2D::AreaSpaceOverrideMode area_angular_damp_mode = (PhysicsServer2D::AreaSpaceOverrideMode)(int)aa[i].area->get_param(PhysicsServer2D::AREA_PARAM_ANGULAR_DAMP_OVERRIDE_MODE);
+				if (area_angular_damp_mode != PhysicsServer2D::AREA_SPACE_OVERRIDE_DISABLED) {
+					real_t area_angular_damp = aa[i].area->get_angular_damp();
+					switch (area_angular_damp_mode) {
+						case PhysicsServer2D::AREA_SPACE_OVERRIDE_COMBINE:
+						case PhysicsServer2D::AREA_SPACE_OVERRIDE_COMBINE_REPLACE: {
+							total_angular_damp += area_angular_damp;
+							angular_damp_done = area_angular_damp_mode == PhysicsServer2D::AREA_SPACE_OVERRIDE_COMBINE_REPLACE;
+						} break;
+						case PhysicsServer2D::AREA_SPACE_OVERRIDE_REPLACE:
+						case PhysicsServer2D::AREA_SPACE_OVERRIDE_REPLACE_COMBINE: {
+							total_angular_damp = area_angular_damp;
+							angular_damp_done = area_angular_damp_mode == PhysicsServer2D::AREA_SPACE_OVERRIDE_REPLACE;
+						} break;
+						default: {
+						}
+					}
+				}
+			}
+			stopped = gravity_done && linear_damp_done && angular_damp_done;
 		}
 	}
+
+	// Add default gravity and damping from space area.
 	if (!stopped) {
-		_compute_area_gravity_and_damping(def_area);
+		GodotArea2D *default_area = get_space()->get_default_area();
+		ERR_FAIL_COND(!default_area);
+
+		if (!gravity_done) {
+			Vector2 default_gravity;
+			default_area->compute_gravity(get_transform().get_origin(), default_gravity);
+			gravity += default_gravity;
+		}
+
+		if (!linear_damp_done) {
+			total_linear_damp += default_area->get_linear_damp();
+		}
+
+		if (!angular_damp_done) {
+			total_angular_damp += default_area->get_angular_damp();
+		}
 	}
+
+	// Override linear damping with body's value.
+	switch (linear_damp_mode) {
+		case PhysicsServer2D::BODY_DAMP_MODE_COMBINE: {
+			total_linear_damp += linear_damp;
+		} break;
+		case PhysicsServer2D::BODY_DAMP_MODE_REPLACE: {
+			total_linear_damp = linear_damp;
+		} break;
+	}
+
+	// Override angular damping with body's value.
+	switch (angular_damp_mode) {
+		case PhysicsServer2D::BODY_DAMP_MODE_COMBINE: {
+			total_angular_damp += angular_damp;
+		} break;
+		case PhysicsServer2D::BODY_DAMP_MODE_REPLACE: {
+			total_angular_damp = angular_damp;
+		} break;
+	}
+
 	gravity *= gravity_scale;
 
-	// If less than 0, override dampenings with that of the Body2D
-	if (angular_damp >= 0) {
-		area_angular_damp = angular_damp;
-	}
-	/*
-	else
-		area_angular_damp=damp_area->get_angular_damp();
-	*/
-
-	if (linear_damp >= 0) {
-		area_linear_damp = linear_damp;
-	}
-	/*
-	else
-		area_linear_damp=damp_area->get_linear_damp();
-	*/
+	prev_linear_velocity = linear_velocity;
+	prev_angular_velocity = angular_velocity;
 
 	Vector2 motion;
 	bool do_motion = false;
@@ -483,35 +565,27 @@ void GodotBody2D::integrate_forces(real_t p_step) {
 
 		do_motion = true;
 
-		/*
-		for(int i=0;i<get_shape_count();i++) {
-			set_shape_kinematic_advance(i,Vector2());
-			set_shape_kinematic_retreat(i,0);
-		}
-		*/
-
 	} else {
 		if (!omit_force_integration) {
 			//overridden by direct state query
 
-			Vector2 force = gravity * mass;
-			force += applied_force;
-			real_t torque = applied_torque;
+			Vector2 force = gravity * mass + applied_force + constant_force;
+			real_t torque = applied_torque + constant_torque;
 
-			real_t damp = 1.0 - p_step * area_linear_damp;
+			real_t damp = 1.0 - p_step * total_linear_damp;
 
 			if (damp < 0) { // reached zero in the given time
 				damp = 0;
 			}
 
-			real_t angular_damp = 1.0 - p_step * area_angular_damp;
+			real_t angular_damp_new = 1.0 - p_step * total_angular_damp;
 
-			if (angular_damp < 0) { // reached zero in the given time
-				angular_damp = 0;
+			if (angular_damp_new < 0) { // reached zero in the given time
+				angular_damp_new = 0;
 			}
 
 			linear_velocity *= damp;
-			angular_velocity *= angular_damp;
+			angular_velocity *= angular_damp_new;
 
 			linear_velocity += _inv_mass * force * p_step;
 			angular_velocity += _inv_inertia * torque * p_step;
@@ -523,17 +597,16 @@ void GodotBody2D::integrate_forces(real_t p_step) {
 		}
 	}
 
-	//motion=linear_velocity*p_step;
+	applied_force = Vector2();
+	applied_torque = 0.0;
 
-	biased_angular_velocity = 0;
+	biased_angular_velocity = 0.0;
 	biased_linear_velocity = Vector2();
 
 	if (do_motion) { //shapes temporarily extend for raycast
 		_update_shapes_with_motion(motion);
 	}
 
-	// damp_area=nullptr; // clear the area, so it is set in the next frame
-	def_area = nullptr; // clear the area, so it is set in the next frame
 	contact_count = 0;
 }
 
@@ -542,7 +615,7 @@ void GodotBody2D::integrate_velocities(real_t p_step) {
 		return;
 	}
 
-	if (fi_callback_data || body_state_callback) {
+	if (fi_callback_data || body_state_callback.get_object()) {
 		get_space()->body_add_to_state_query_list(&direct_state_query_list);
 	}
 
@@ -588,7 +661,7 @@ void GodotBody2D::wakeup_neighbours() {
 				continue;
 			}
 			GodotBody2D *b = n[i];
-			if (b->mode < PhysicsServer2D::BODY_MODE_DYNAMIC) {
+			if (b->mode < PhysicsServer2D::BODY_MODE_RIGID) {
 				continue;
 			}
 
@@ -600,26 +673,30 @@ void GodotBody2D::wakeup_neighbours() {
 }
 
 void GodotBody2D::call_queries() {
+	Variant direct_state_variant = get_direct_state();
+
 	if (fi_callback_data) {
 		if (!fi_callback_data->callable.get_object()) {
 			set_force_integration_callback(Callable());
 		} else {
-			Variant direct_state_variant = get_direct_state();
 			const Variant *vp[2] = { &direct_state_variant, &fi_callback_data->udata };
 
 			Callable::CallError ce;
 			Variant rv;
 			if (fi_callback_data->udata.get_type() != Variant::NIL) {
-				fi_callback_data->callable.call(vp, 2, rv, ce);
+				fi_callback_data->callable.callp(vp, 2, rv, ce);
 
 			} else {
-				fi_callback_data->callable.call(vp, 1, rv, ce);
+				fi_callback_data->callable.callp(vp, 1, rv, ce);
 			}
 		}
 	}
 
-	if (body_state_callback) {
-		(body_state_callback)(body_state_callback_instance, get_direct_state());
+	if (body_state_callback.get_object()) {
+		const Variant *vp[1] = { &direct_state_variant };
+		Callable::CallError ce;
+		Variant rv;
+		body_state_callback.callp(vp, 1, rv, ce);
 	}
 }
 
@@ -640,9 +717,8 @@ bool GodotBody2D::sleep_test(real_t p_step) {
 	}
 }
 
-void GodotBody2D::set_state_sync_callback(void *p_instance, PhysicsServer2D::BodyStateCallback p_callback) {
-	body_state_callback_instance = p_instance;
-	body_state_callback = p_callback;
+void GodotBody2D::set_state_sync_callback(const Callable &p_callable) {
+	body_state_callback = p_callable;
 }
 
 void GodotBody2D::set_force_integration_callback(const Callable &p_callable, const Variant &p_udata) {

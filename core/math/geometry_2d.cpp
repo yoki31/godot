@@ -1,32 +1,32 @@
-/*************************************************************************/
-/*  geometry_2d.cpp                                                      */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  geometry_2d.cpp                                                       */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #include "geometry_2d.h"
 
@@ -74,14 +74,14 @@ Vector<Vector<Vector2>> Geometry2D::decompose_polygon_in_convex(Vector<Point2> p
 struct _AtlasWorkRect {
 	Size2i s;
 	Point2i p;
-	int idx;
+	int idx = 0;
 	_FORCE_INLINE_ bool operator<(const _AtlasWorkRect &p_r) const { return s.width > p_r.s.width; };
 };
 
 struct _AtlasWorkRectResult {
 	Vector<_AtlasWorkRect> result;
-	int max_w;
-	int max_h;
+	int max_w = 0;
+	int max_h = 0;
 };
 
 void Geometry2D::make_atlas(const Vector<Size2i> &p_rects, Vector<Point2i> &r_result, Size2i &r_size) {
@@ -218,10 +218,10 @@ Vector<Vector<Point2>> Geometry2D::_polypaths_do_operation(PolyBooleanOperation 
 
 	// Need to scale points (Clipper's requirement for robust computation).
 	for (int i = 0; i != p_polypath_a.size(); ++i) {
-		path_a << IntPoint(p_polypath_a[i].x * SCALE_FACTOR, p_polypath_a[i].y * SCALE_FACTOR);
+		path_a << IntPoint(p_polypath_a[i].x * (real_t)SCALE_FACTOR, p_polypath_a[i].y * (real_t)SCALE_FACTOR);
 	}
 	for (int i = 0; i != p_polypath_b.size(); ++i) {
-		path_b << IntPoint(p_polypath_b[i].x * SCALE_FACTOR, p_polypath_b[i].y * SCALE_FACTOR);
+		path_b << IntPoint(p_polypath_b[i].x * (real_t)SCALE_FACTOR, p_polypath_b[i].y * (real_t)SCALE_FACTOR);
 	}
 	Clipper clp;
 	clp.AddPath(path_a, ptSubject, !is_a_open); // Forward compatible with Clipper 10.0.0.
@@ -246,8 +246,8 @@ Vector<Vector<Point2>> Geometry2D::_polypaths_do_operation(PolyBooleanOperation 
 
 		for (Paths::size_type j = 0; j < scaled_path.size(); ++j) {
 			polypath.push_back(Point2(
-					static_cast<real_t>(scaled_path[j].X) / SCALE_FACTOR,
-					static_cast<real_t>(scaled_path[j].Y) / SCALE_FACTOR));
+					static_cast<real_t>(scaled_path[j].X) / (real_t)SCALE_FACTOR,
+					static_cast<real_t>(scaled_path[j].Y) / (real_t)SCALE_FACTOR));
 		}
 		polypaths.push_back(polypath);
 	}
@@ -290,17 +290,17 @@ Vector<Vector<Point2>> Geometry2D::_polypath_offset(const Vector<Point2> &p_poly
 			et = etOpenRound;
 			break;
 	}
-	ClipperOffset co(2.0, 0.25 * SCALE_FACTOR); // Defaults from ClipperOffset.
+	ClipperOffset co(2.0, 0.25f * (real_t)SCALE_FACTOR); // Defaults from ClipperOffset.
 	Path path;
 
 	// Need to scale points (Clipper's requirement for robust computation).
 	for (int i = 0; i != p_polypath.size(); ++i) {
-		path << IntPoint(p_polypath[i].x * SCALE_FACTOR, p_polypath[i].y * SCALE_FACTOR);
+		path << IntPoint(p_polypath[i].x * (real_t)SCALE_FACTOR, p_polypath[i].y * (real_t)SCALE_FACTOR);
 	}
 	co.AddPath(path, jt, et);
 
 	Paths paths;
-	co.Execute(paths, p_delta * SCALE_FACTOR); // Inflate/deflate.
+	co.Execute(paths, p_delta * (real_t)SCALE_FACTOR); // Inflate/deflate.
 
 	// Have to scale points down now.
 	Vector<Vector<Point2>> polypaths;
@@ -312,47 +312,12 @@ Vector<Vector<Point2>> Geometry2D::_polypath_offset(const Vector<Point2> &p_poly
 
 		for (Paths::size_type j = 0; j < scaled_path.size(); ++j) {
 			polypath.push_back(Point2(
-					static_cast<real_t>(scaled_path[j].X) / SCALE_FACTOR,
-					static_cast<real_t>(scaled_path[j].Y) / SCALE_FACTOR));
+					static_cast<real_t>(scaled_path[j].X) / (real_t)SCALE_FACTOR,
+					static_cast<real_t>(scaled_path[j].Y) / (real_t)SCALE_FACTOR));
 		}
 		polypaths.push_back(polypath);
 	}
 	return polypaths;
-}
-
-Vector<Point2i> Geometry2D::pack_rects(const Vector<Size2i> &p_sizes, const Size2i &p_atlas_size) {
-	Vector<stbrp_node> nodes;
-	nodes.resize(p_atlas_size.width);
-
-	stbrp_context context;
-	stbrp_init_target(&context, p_atlas_size.width, p_atlas_size.height, nodes.ptrw(), p_atlas_size.width);
-
-	Vector<stbrp_rect> rects;
-	rects.resize(p_sizes.size());
-
-	for (int i = 0; i < p_sizes.size(); i++) {
-		rects.write[i].id = 0;
-		rects.write[i].w = p_sizes[i].width;
-		rects.write[i].h = p_sizes[i].height;
-		rects.write[i].x = 0;
-		rects.write[i].y = 0;
-		rects.write[i].was_packed = 0;
-	}
-
-	int res = stbrp_pack_rects(&context, rects.ptrw(), rects.size());
-	if (res == 0) { //pack failed
-		return Vector<Point2i>();
-	}
-
-	Vector<Point2i> ret;
-	ret.resize(p_sizes.size());
-
-	for (int i = 0; i < p_sizes.size(); i++) {
-		Point2i r(rects[i].x, rects[i].y);
-		ret.write[i] = r;
-	}
-
-	return ret;
 }
 
 Vector<Vector3i> Geometry2D::partial_pack_rects(const Vector<Vector2i> &p_sizes, const Size2i &p_atlas_size) {

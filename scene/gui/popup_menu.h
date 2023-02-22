@@ -1,32 +1,32 @@
-/*************************************************************************/
-/*  popup_menu.h                                                         */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  popup_menu.h                                                          */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #ifndef POPUP_MENU_H
 #define POPUP_MENU_H
@@ -47,7 +47,6 @@ class PopupMenu : public Popup {
 		Ref<TextLine> text_buf;
 		Ref<TextLine> accel_text_buf;
 
-		Dictionary opentype_features;
 		String language;
 		Control::TextDirection text_direction = Control::TEXT_DIRECTION_AUTO;
 
@@ -66,10 +65,10 @@ class PopupMenu : public Popup {
 		Variant metadata;
 		String submenu;
 		String tooltip;
-		uint32_t accel = 0;
+		Key accel = Key::NONE;
 		int _ofs_cache = 0;
 		int _height_cache = 0;
-		int h_ofs = 0;
+		int indent = 0;
 		Ref<Shortcut> shortcut;
 		bool shortcut_is_global = false;
 		bool shortcut_is_disabled = false;
@@ -87,12 +86,13 @@ class PopupMenu : public Popup {
 	};
 
 	bool close_allowed = false;
+	bool activated_by_keyboard = false;
 
 	Timer *minimum_lifetime_timer = nullptr;
-	Timer *submenu_timer;
+	Timer *submenu_timer = nullptr;
 	List<Rect2> autohide_areas;
 	Vector<Item> items;
-	int initial_button_mask = 0;
+	BitField<MouseButtonMask> initial_button_mask;
 	bool during_grabbed_click = false;
 	int mouse_over = -1;
 	int submenu_over = -1;
@@ -103,12 +103,11 @@ class PopupMenu : public Popup {
 
 	int _get_item_height(int p_item) const;
 	int _get_items_total_height() const;
-	void _scroll_to_item(int p_item);
 
 	void _shape_item(int p_item);
 
 	virtual void gui_input(const Ref<InputEvent> &p_event);
-	void _activate_submenu(int p_over);
+	void _activate_submenu(int p_over, bool p_by_keyboard = false);
 	void _submenu_timeout();
 
 	uint64_t popup_time_msec = 0;
@@ -117,30 +116,80 @@ class PopupMenu : public Popup {
 	bool hide_on_multistate_item_selection = false;
 	Vector2 moved;
 
-	Array _get_items() const;
-	void _set_items(const Array &p_items);
-
-	Map<Ref<Shortcut>, int> shortcut_refcount;
+	HashMap<Ref<Shortcut>, int> shortcut_refcount;
 
 	void _ref_shortcut(Ref<Shortcut> p_sc);
 	void _unref_shortcut(Ref<Shortcut> p_sc);
+
+	void _shortcut_changed();
 
 	bool allow_search = true;
 	uint64_t search_time_msec = 0;
 	String search_string = "";
 
-	MarginContainer *margin_container;
-	ScrollContainer *scroll_container;
-	Control *control;
+	MarginContainer *margin_container = nullptr;
+	ScrollContainer *scroll_container = nullptr;
+	Control *control = nullptr;
+
+	struct ThemeCache {
+		Ref<StyleBox> panel_style;
+		Ref<StyleBox> hover_style;
+
+		Ref<StyleBox> separator_style;
+		Ref<StyleBox> labeled_separator_left;
+		Ref<StyleBox> labeled_separator_right;
+
+		int v_separation = 0;
+		int h_separation = 0;
+		int indent = 0;
+		int item_start_padding = 0;
+		int item_end_padding = 0;
+
+		Ref<Texture2D> checked;
+		Ref<Texture2D> checked_disabled;
+		Ref<Texture2D> unchecked;
+		Ref<Texture2D> unchecked_disabled;
+		Ref<Texture2D> radio_checked;
+		Ref<Texture2D> radio_checked_disabled;
+		Ref<Texture2D> radio_unchecked;
+		Ref<Texture2D> radio_unchecked_disabled;
+
+		Ref<Texture2D> submenu;
+		Ref<Texture2D> submenu_mirrored;
+
+		Ref<Font> font;
+		int font_size = 0;
+		Ref<Font> font_separator;
+		int font_separator_size = 0;
+
+		Color font_color;
+		Color font_hover_color;
+		Color font_disabled_color;
+		Color font_accelerator_color;
+		int font_outline_size = 0;
+		Color font_outline_color;
+
+		Color font_separator_color;
+		int font_separator_outline_size = 0;
+		Color font_separator_outline_color;
+	} theme_cache;
 
 	void _draw_items();
 	void _draw_background();
 
 	void _minimum_lifetime_timeout();
 	void _close_pressed();
+	void _menu_changed();
 
 protected:
+	virtual void _update_theme_item_cache() override;
+
+	virtual void add_child_notify(Node *p_child) override;
+	virtual void remove_child_notify(Node *p_child) override;
 	void _notification(int p_what);
+	bool _set(const StringName &p_name, const Variant &p_value);
+	bool _get(const StringName &p_name, Variant &r_ret) const;
+	void _get_property_list(List<PropertyInfo> *p_list) const;
 	static void _bind_methods();
 
 public:
@@ -148,14 +197,16 @@ public:
 	// this value should be updated to reflect the new size.
 	static const int ITEM_PROPERTY_SIZE = 10;
 
-	void add_item(const String &p_label, int p_id = -1, uint32_t p_accel = 0);
-	void add_icon_item(const Ref<Texture2D> &p_icon, const String &p_label, int p_id = -1, uint32_t p_accel = 0);
-	void add_check_item(const String &p_label, int p_id = -1, uint32_t p_accel = 0);
-	void add_icon_check_item(const Ref<Texture2D> &p_icon, const String &p_label, int p_id = -1, uint32_t p_accel = 0);
-	void add_radio_check_item(const String &p_label, int p_id = -1, uint32_t p_accel = 0);
-	void add_icon_radio_check_item(const Ref<Texture2D> &p_icon, const String &p_label, int p_id = -1, uint32_t p_accel = 0);
+	virtual void _parent_focused() override;
 
-	void add_multistate_item(const String &p_label, int p_max_states, int p_default_state = 0, int p_id = -1, uint32_t p_accel = 0);
+	void add_item(const String &p_label, int p_id = -1, Key p_accel = Key::NONE);
+	void add_icon_item(const Ref<Texture2D> &p_icon, const String &p_label, int p_id = -1, Key p_accel = Key::NONE);
+	void add_check_item(const String &p_label, int p_id = -1, Key p_accel = Key::NONE);
+	void add_icon_check_item(const Ref<Texture2D> &p_icon, const String &p_label, int p_id = -1, Key p_accel = Key::NONE);
+	void add_radio_check_item(const String &p_label, int p_id = -1, Key p_accel = Key::NONE);
+	void add_icon_radio_check_item(const Ref<Texture2D> &p_icon, const String &p_label, int p_id = -1, Key p_accel = Key::NONE);
+
+	void add_multistate_item(const String &p_label, int p_max_states, int p_default_state = 0, int p_id = -1, Key p_accel = Key::NONE);
 
 	void add_shortcut(const Ref<Shortcut> &p_shortcut, int p_id = -1, bool p_global = false);
 	void add_icon_shortcut(const Ref<Texture2D> &p_icon, const Ref<Shortcut> &p_shortcut, int p_id = -1, bool p_global = false);
@@ -169,13 +220,11 @@ public:
 	void set_item_text(int p_idx, const String &p_text);
 
 	void set_item_text_direction(int p_idx, Control::TextDirection p_text_direction);
-	void set_item_opentype_feature(int p_idx, const String &p_name, int p_value);
-	void clear_item_opentype_features(int p_idx);
 	void set_item_language(int p_idx, const String &p_language);
 	void set_item_icon(int p_idx, const Ref<Texture2D> &p_icon);
 	void set_item_checked(int p_idx, bool p_checked);
 	void set_item_id(int p_idx, int p_id);
-	void set_item_accelerator(int p_idx, uint32_t p_accel);
+	void set_item_accelerator(int p_idx, Key p_accel);
 	void set_item_metadata(int p_idx, const Variant &p_meta);
 	void set_item_disabled(int p_idx, bool p_disabled);
 	void set_item_submenu(int p_idx, const String &p_submenu);
@@ -184,7 +233,7 @@ public:
 	void set_item_as_radio_checkable(int p_idx, bool p_radio_checkable);
 	void set_item_tooltip(int p_idx, const String &p_tooltip);
 	void set_item_shortcut(int p_idx, const Ref<Shortcut> &p_shortcut, bool p_global = false);
-	void set_item_h_offset(int p_idx, int p_offset);
+	void set_item_indent(int p_idx, int p_indent);
 	void set_item_multistate(int p_idx, int p_state);
 	void toggle_item_multistate(int p_idx);
 	void set_item_shortcut_disabled(int p_idx, bool p_disabled);
@@ -193,14 +242,13 @@ public:
 
 	String get_item_text(int p_idx) const;
 	Control::TextDirection get_item_text_direction(int p_idx) const;
-	int get_item_opentype_feature(int p_idx, const String &p_name) const;
 	String get_item_language(int p_idx) const;
 	int get_item_idx_from_text(const String &text) const;
 	Ref<Texture2D> get_item_icon(int p_idx) const;
 	bool is_item_checked(int p_idx) const;
 	int get_item_id(int p_idx) const;
 	int get_item_index(int p_id) const;
-	uint32_t get_item_accelerator(int p_idx) const;
+	Key get_item_accelerator(int p_idx) const;
 	Variant get_item_metadata(int p_idx) const;
 	bool is_item_disabled(int p_idx) const;
 	String get_item_submenu(int p_idx) const;
@@ -208,12 +256,20 @@ public:
 	bool is_item_checkable(int p_idx) const;
 	bool is_item_radio_checkable(int p_idx) const;
 	bool is_item_shortcut_disabled(int p_idx) const;
+	bool is_item_shortcut_global(int p_idx) const;
 	String get_item_tooltip(int p_idx) const;
 	Ref<Shortcut> get_item_shortcut(int p_idx) const;
+	int get_item_indent(int p_idx) const;
+	int get_item_max_states(int p_idx) const;
 	int get_item_state(int p_idx) const;
 
-	int get_current_index() const;
+	void set_focused_item(int p_idx);
+	int get_focused_item() const;
+
+	void set_item_count(int p_count);
 	int get_item_count() const;
+
+	void scroll_to_item(int p_item);
 
 	bool activate_item_by_event(const Ref<InputEvent> &p_event, bool p_for_global_only = false);
 	void activate_item(int p_item);
@@ -227,8 +283,6 @@ public:
 	void set_parent_rect(const Rect2 &p_rect);
 
 	virtual String get_tooltip(const Point2 &p_pos) const;
-
-	virtual void get_translatable_strings(List<String> *p_strings) const override;
 
 	void add_autohide_area(const Rect2 &p_area);
 	void clear_autohide_areas();
@@ -256,4 +310,4 @@ public:
 	~PopupMenu();
 };
 
-#endif
+#endif // POPUP_MENU_H

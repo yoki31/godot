@@ -1,32 +1,32 @@
-/*************************************************************************/
-/*  mobile_vr_interface.cpp                                              */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  mobile_vr_interface.cpp                                               */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #include "mobile_vr_interface.h"
 
@@ -45,7 +45,7 @@ uint32_t MobileVRInterface::get_capabilities() const {
 
 Vector3 MobileVRInterface::scale_magneto(const Vector3 &p_magnetometer) {
 	// Our magnetometer doesn't give us nice clean data.
-	// Well it may on Mac OS X because we're getting a calibrated value in the current implementation but Android we're getting raw data.
+	// Well it may on macOS because we're getting a calibrated value in the current implementation but Android we're getting raw data.
 	// This is a fairly simple adjustment we can do to correct for the magnetometer data being elliptical
 
 	Vector3 mag_raw = p_magnetometer;
@@ -112,9 +112,9 @@ Basis MobileVRInterface::combine_acc_mag(const Vector3 &p_grav, const Vector3 &p
 
 	// We use our gravity and magnetometer vectors to construct our matrix
 	Basis acc_mag_m3;
-	acc_mag_m3.elements[0] = -magneto_east;
-	acc_mag_m3.elements[1] = up;
-	acc_mag_m3.elements[2] = magneto;
+	acc_mag_m3.rows[0] = -magneto_east;
+	acc_mag_m3.rows[1] = up;
+	acc_mag_m3.rows[2] = magneto;
 
 	return acc_mag_m3;
 };
@@ -155,7 +155,7 @@ void MobileVRInterface::set_position_from_sensors() {
 	last_magnetometer_data = magneto;
 
 	if (grav.length() < 0.1) {
-		// not ideal but use our accelerometer, this will contain shaky user behaviour
+		// not ideal but use our accelerometer, this will contain shaky user behavior
 		// maybe look into some math but I'm guessing that if this isn't available, it's because we lack the gyro sensor to actually work out
 		// what a stable gravity vector is
 		grav = acc;
@@ -175,12 +175,13 @@ void MobileVRInterface::set_position_from_sensors() {
 	if (has_gyro) {
 		// start with applying our gyro (do NOT smooth our gyro!)
 		Basis rotate;
-		rotate.rotate(orientation.get_axis(0), gyro.x * delta_time);
-		rotate.rotate(orientation.get_axis(1), gyro.y * delta_time);
-		rotate.rotate(orientation.get_axis(2), gyro.z * delta_time);
+		rotate.rotate(orientation.get_column(0), gyro.x * delta_time);
+		rotate.rotate(orientation.get_column(1), gyro.y * delta_time);
+		rotate.rotate(orientation.get_column(2), gyro.z * delta_time);
 		orientation = rotate * orientation;
 
 		tracking_state = XRInterface::XR_NORMAL_TRACKING;
+		tracking_confidence = XRPose::XR_TRACKING_CONFIDENCE_HIGH;
 	};
 
 	///@TODO improve this, the magnetometer is very fidgety sometimes flipping the axis for no apparent reason (probably a bug on my part)
@@ -193,6 +194,7 @@ void MobileVRInterface::set_position_from_sensors() {
 		orientation = Basis(transform_quat);
 
 		tracking_state = XRInterface::XR_NORMAL_TRACKING;
+		tracking_confidence = XRPose::XR_TRACKING_CONFIDENCE_HIGH;
 	} else if (has_grav) {
 		// use gravity vector to make sure down is down...
 		// transform gravity into our world space
@@ -450,10 +452,10 @@ Transform3D MobileVRInterface::get_transform_for_view(uint32_t p_view, const Tra
 	return transform_for_eye;
 };
 
-CameraMatrix MobileVRInterface::get_projection_for_view(uint32_t p_view, double p_aspect, double p_z_near, double p_z_far) {
+Projection MobileVRInterface::get_projection_for_view(uint32_t p_view, double p_aspect, double p_z_near, double p_z_far) {
 	_THREAD_SAFE_METHOD_
 
-	CameraMatrix eye;
+	Projection eye;
 
 	aspect = p_aspect;
 	eye.set_for_hmd(p_view + 1, p_aspect, intraocular_dist, display_width, display_to_lens, oversample, p_z_near, p_z_far);
@@ -461,7 +463,7 @@ CameraMatrix MobileVRInterface::get_projection_for_view(uint32_t p_view, double 
 	return eye;
 };
 
-Vector<BlitToScreen> MobileVRInterface::commit_views(RID p_render_target, const Rect2 &p_screen_rect) {
+Vector<BlitToScreen> MobileVRInterface::post_draw_viewport(RID p_render_target, const Rect2 &p_screen_rect) {
 	_THREAD_SAFE_METHOD_
 
 	Vector<BlitToScreen> blit_to_screen;
@@ -512,7 +514,7 @@ void MobileVRInterface::process() {
 
 		if (head.is_valid()) {
 			// Set our head position, note in real space, reference frame and world scale is applied later
-			head->set_pose("default", head_transform, Vector3(), Vector3());
+			head->set_pose("default", head_transform, Vector3(), Vector3(), tracking_confidence);
 		}
 	};
 };

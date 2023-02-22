@@ -1,37 +1,38 @@
-/*************************************************************************/
-/*  collision_polygon_2d.cpp                                             */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  collision_polygon_2d.cpp                                              */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #include "collision_polygon_2d.h"
 
 #include "collision_object_2d.h"
 #include "core/math/geometry_2d.h"
+#include "scene/2d/area_2d.h"
 #include "scene/resources/concave_polygon_shape_2d.h"
 #include "scene/resources/convex_polygon_shape_2d.h"
 
@@ -102,26 +103,20 @@ void CollisionPolygon2D::_notification(int p_what) {
 				_build_polygon();
 				_update_in_shape_owner();
 			}
-
-			/*if (Engine::get_singleton()->is_editor_hint()) {
-				//display above all else
-				set_z_as_relative(false);
-				set_z_index(RS::CANVAS_ITEM_Z_MAX - 1);
-			}*/
-
 		} break;
+
 		case NOTIFICATION_ENTER_TREE: {
 			if (parent) {
 				_update_in_shape_owner();
 			}
-
 		} break;
+
 		case NOTIFICATION_LOCAL_TRANSFORM_CHANGED: {
 			if (parent) {
 				_update_in_shape_owner(true);
 			}
-
 		} break;
+
 		case NOTIFICATION_UNPARENTED: {
 			if (parent) {
 				parent->remove_shape_owner(owner_id);
@@ -131,19 +126,12 @@ void CollisionPolygon2D::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_DRAW: {
+			ERR_FAIL_COND(!is_inside_tree());
 			if (!Engine::get_singleton()->is_editor_hint() && !get_tree()->is_debugging_collisions_hint()) {
 				break;
 			}
 
-			int polygon_count = polygon.size();
-			for (int i = 0; i < polygon_count; i++) {
-				Vector2 p = polygon[i];
-				Vector2 n = polygon[(i + 1) % polygon_count];
-				// draw line with width <= 1, so it does not scale with zoom and break pixel exact editing
-				draw_line(p, n, Color(0.9, 0.2, 0.0, 0.8), 1);
-			}
-
-			if (polygon_count > 2) {
+			if (polygon.size() > 2) {
 #define DEBUG_DECOMPOSE
 #if defined(TOOLS_ENABLED) && defined(DEBUG_DECOMPOSE)
 				Vector<Vector<Vector2>> decomp = _decompose_in_convex();
@@ -156,6 +144,11 @@ void CollisionPolygon2D::_notification(int p_what) {
 #else
 				draw_colored_polygon(polygon, get_tree()->get_debug_collisions_color());
 #endif
+
+				const Color stroke_color = Color(0.9, 0.2, 0.0);
+				draw_polyline(polygon, stroke_color);
+				// Draw the last segment.
+				draw_line(polygon[polygon.size() - 1], polygon[0], stroke_color);
 			}
 
 			if (one_way_collision) {
@@ -163,15 +156,15 @@ void CollisionPolygon2D::_notification(int p_what) {
 				dcol.a = 1.0;
 				Vector2 line_to(0, 20);
 				draw_line(Vector2(), line_to, dcol, 3);
-				Vector<Vector2> pts;
 				real_t tsize = 8;
-				pts.push_back(line_to + (Vector2(0, tsize)));
-				pts.push_back(line_to + (Vector2(Math_SQRT12 * tsize, 0)));
-				pts.push_back(line_to + (Vector2(-Math_SQRT12 * tsize, 0)));
-				Vector<Color> cols;
-				for (int i = 0; i < 3; i++) {
-					cols.push_back(dcol);
-				}
+
+				Vector<Vector2> pts = {
+					line_to + Vector2(0, tsize),
+					line_to + Vector2(Math_SQRT12 * tsize, 0),
+					line_to + Vector2(-Math_SQRT12 * tsize, 0)
+				};
+
+				Vector<Color> cols{ dcol, dcol, dcol };
 
 				draw_primitive(pts, cols, Vector<Vector2>()); //small arrow
 			}
@@ -202,7 +195,7 @@ void CollisionPolygon2D::set_polygon(const Vector<Point2> &p_polygon) {
 		_build_polygon();
 		_update_in_shape_owner();
 	}
-	update();
+	queue_redraw();
 	update_configuration_warnings();
 }
 
@@ -217,7 +210,7 @@ void CollisionPolygon2D::set_build_mode(BuildMode p_mode) {
 		_build_polygon();
 		_update_in_shape_owner();
 	}
-	update();
+	queue_redraw();
 	update_configuration_warnings();
 }
 
@@ -239,25 +232,28 @@ bool CollisionPolygon2D::_edit_is_selected_on_click(const Point2 &p_point, doubl
 }
 #endif
 
-TypedArray<String> CollisionPolygon2D::get_configuration_warnings() const {
-	TypedArray<String> warnings = Node::get_configuration_warnings();
+PackedStringArray CollisionPolygon2D::get_configuration_warnings() const {
+	PackedStringArray warnings = Node::get_configuration_warnings();
 
 	if (!Object::cast_to<CollisionObject2D>(get_parent())) {
-		warnings.push_back(TTR("CollisionPolygon2D only serves to provide a collision shape to a CollisionObject2D derived node. Please only use it as a child of Area2D, StaticBody2D, RigidDynamicBody2D, CharacterBody2D, etc. to give them a shape."));
+		warnings.push_back(RTR("CollisionPolygon2D only serves to provide a collision shape to a CollisionObject2D derived node. Please only use it as a child of Area2D, StaticBody2D, RigidBody2D, CharacterBody2D, etc. to give them a shape."));
 	}
 
 	int polygon_count = polygon.size();
 	if (polygon_count == 0) {
-		warnings.push_back(TTR("An empty CollisionPolygon2D has no effect on collision."));
+		warnings.push_back(RTR("An empty CollisionPolygon2D has no effect on collision."));
 	} else {
 		bool solids = build_mode == BUILD_SOLIDS;
 		if (solids) {
 			if (polygon_count < 3) {
-				warnings.push_back(TTR("Invalid polygon. At least 3 points are needed in 'Solids' build mode."));
+				warnings.push_back(RTR("Invalid polygon. At least 3 points are needed in 'Solids' build mode."));
 			}
 		} else if (polygon_count < 2) {
-			warnings.push_back(TTR("Invalid polygon. At least 2 points are needed in 'Segments' build mode."));
+			warnings.push_back(RTR("Invalid polygon. At least 2 points are needed in 'Segments' build mode."));
 		}
+	}
+	if (one_way_collision && Object::cast_to<Area2D>(get_parent())) {
+		warnings.push_back(RTR("The One Way Collision property will be ignored when the parent is an Area2D."));
 	}
 
 	return warnings;
@@ -265,7 +261,7 @@ TypedArray<String> CollisionPolygon2D::get_configuration_warnings() const {
 
 void CollisionPolygon2D::set_disabled(bool p_disabled) {
 	disabled = p_disabled;
-	update();
+	queue_redraw();
 	if (parent) {
 		parent->shape_owner_set_disabled(owner_id, p_disabled);
 	}
@@ -277,10 +273,11 @@ bool CollisionPolygon2D::is_disabled() const {
 
 void CollisionPolygon2D::set_one_way_collision(bool p_enable) {
 	one_way_collision = p_enable;
-	update();
+	queue_redraw();
 	if (parent) {
 		parent->shape_owner_set_one_way_collision(owner_id, p_enable);
 	}
+	update_configuration_warnings();
 }
 
 bool CollisionPolygon2D::is_one_way_collision_enabled() const {
@@ -315,7 +312,7 @@ void CollisionPolygon2D::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::PACKED_VECTOR2_ARRAY, "polygon"), "set_polygon", "get_polygon");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "disabled"), "set_disabled", "is_disabled");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "one_way_collision"), "set_one_way_collision", "is_one_way_collision_enabled");
-	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "one_way_collision_margin", PROPERTY_HINT_RANGE, "0,128,0.1"), "set_one_way_collision_margin", "get_one_way_collision_margin");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "one_way_collision_margin", PROPERTY_HINT_RANGE, "0,128,0.1,suffix:px"), "set_one_way_collision_margin", "get_one_way_collision_margin");
 
 	BIND_ENUM_CONSTANT(BUILD_SOLIDS);
 	BIND_ENUM_CONSTANT(BUILD_SEGMENTS);
@@ -323,4 +320,5 @@ void CollisionPolygon2D::_bind_methods() {
 
 CollisionPolygon2D::CollisionPolygon2D() {
 	set_notify_local_transform(true);
+	set_hide_clip_children(true);
 }

@@ -1,32 +1,32 @@
-/*************************************************************************/
-/*  binder_common.h                                                      */
-/*************************************************************************/
-/*                       This file is part of:                           */
-/*                           GODOT ENGINE                                */
-/*                      https://godotengine.org                          */
-/*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
+/**************************************************************************/
+/*  binder_common.h                                                       */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #ifndef BINDER_COMMON_H
 #define BINDER_COMMON_H
@@ -44,24 +44,42 @@
 
 #include <stdio.h>
 
+// Variant cannot define an implicit cast operator for every Object subclass, so the
+// casting is done here, to allow binding methods with parameters more specific than Object *
+
 template <class T>
 struct VariantCaster {
 	static _FORCE_INLINE_ T cast(const Variant &p_variant) {
-		return p_variant;
+		using TStripped = std::remove_pointer_t<T>;
+		if constexpr (std::is_base_of<Object, TStripped>::value) {
+			return Object::cast_to<TStripped>(p_variant);
+		} else {
+			return p_variant;
+		}
 	}
 };
 
 template <class T>
 struct VariantCaster<T &> {
 	static _FORCE_INLINE_ T cast(const Variant &p_variant) {
-		return p_variant;
+		using TStripped = std::remove_pointer_t<T>;
+		if constexpr (std::is_base_of<Object, TStripped>::value) {
+			return Object::cast_to<TStripped>(p_variant);
+		} else {
+			return p_variant;
+		}
 	}
 };
 
 template <class T>
 struct VariantCaster<const T &> {
 	static _FORCE_INLINE_ T cast(const Variant &p_variant) {
-		return p_variant;
+		using TStripped = std::remove_pointer_t<T>;
+		if constexpr (std::is_base_of<Object, TStripped>::value) {
+			return Object::cast_to<TStripped>(p_variant);
+		} else {
+			return p_variant;
+		}
 	}
 };
 
@@ -80,35 +98,100 @@ struct VariantCaster<const T &> {
 		}                                                                    \
 		typedef int64_t EncodeT;                                             \
 		_FORCE_INLINE_ static void encode(m_enum p_val, const void *p_ptr) { \
-			*(int64_t *)p_ptr = p_val;                                       \
+			*(int64_t *)p_ptr = (int64_t)p_val;                              \
 		}                                                                    \
+	};                                                                       \
+	template <>                                                              \
+	struct ZeroInitializer<m_enum> {                                         \
+		static void initialize(m_enum &value) { value = (m_enum)0; }         \
+	};
+
+#define VARIANT_BITFIELD_CAST(m_enum)                                                  \
+	MAKE_BITFIELD_TYPE_INFO(m_enum)                                                    \
+	template <>                                                                        \
+	struct VariantCaster<BitField<m_enum>> {                                           \
+		static _FORCE_INLINE_ BitField<m_enum> cast(const Variant &p_variant) {        \
+			return BitField<m_enum>(p_variant.operator int64_t());                     \
+		}                                                                              \
+	};                                                                                 \
+	template <>                                                                        \
+	struct PtrToArg<BitField<m_enum>> {                                                \
+		_FORCE_INLINE_ static BitField<m_enum> convert(const void *p_ptr) {            \
+			return BitField<m_enum>(*reinterpret_cast<const int64_t *>(p_ptr));        \
+		}                                                                              \
+		typedef int64_t EncodeT;                                                       \
+		_FORCE_INLINE_ static void encode(BitField<m_enum> p_val, const void *p_ptr) { \
+			*(int64_t *)p_ptr = p_val;                                                 \
+		}                                                                              \
+	};                                                                                 \
+	template <>                                                                        \
+	struct ZeroInitializer<BitField<m_enum>> {                                         \
+		static void initialize(BitField<m_enum> &value) { value = 0; }                 \
 	};
 
 // Object enum casts must go here
 VARIANT_ENUM_CAST(Object::ConnectFlags);
 
+VARIANT_ENUM_CAST(Vector2::Axis);
+VARIANT_ENUM_CAST(Vector2i::Axis);
 VARIANT_ENUM_CAST(Vector3::Axis);
+VARIANT_ENUM_CAST(Vector3i::Axis);
+VARIANT_ENUM_CAST(Vector4::Axis);
+VARIANT_ENUM_CAST(Vector4i::Axis);
+VARIANT_ENUM_CAST(EulerOrder);
+VARIANT_ENUM_CAST(Projection::Planes);
 
 VARIANT_ENUM_CAST(Error);
 VARIANT_ENUM_CAST(Side);
 VARIANT_ENUM_CAST(ClockDirection);
 VARIANT_ENUM_CAST(Corner);
 VARIANT_ENUM_CAST(HatDir);
-VARIANT_ENUM_CAST(HatMask);
+VARIANT_BITFIELD_CAST(HatMask);
 VARIANT_ENUM_CAST(JoyAxis);
 VARIANT_ENUM_CAST(JoyButton);
-VARIANT_ENUM_CAST(Key);
-VARIANT_ENUM_CAST(KeyModifierMask);
+
 VARIANT_ENUM_CAST(MIDIMessage);
 VARIANT_ENUM_CAST(MouseButton);
+VARIANT_BITFIELD_CAST(MouseButtonMask);
 VARIANT_ENUM_CAST(Orientation);
-VARIANT_ENUM_CAST(HAlign);
-VARIANT_ENUM_CAST(VAlign);
-VARIANT_ENUM_CAST(InlineAlign);
+VARIANT_ENUM_CAST(HorizontalAlignment);
+VARIANT_ENUM_CAST(VerticalAlignment);
+VARIANT_ENUM_CAST(InlineAlignment);
 VARIANT_ENUM_CAST(PropertyHint);
-VARIANT_ENUM_CAST(PropertyUsageFlags);
+VARIANT_BITFIELD_CAST(PropertyUsageFlags);
 VARIANT_ENUM_CAST(Variant::Type);
 VARIANT_ENUM_CAST(Variant::Operator);
+
+// Key
+
+VARIANT_ENUM_CAST(Key);
+VARIANT_BITFIELD_CAST(KeyModifierMask);
+
+static inline Key &operator|=(Key &a, BitField<KeyModifierMask> b) {
+	a = static_cast<Key>(static_cast<int>(a) | static_cast<int>(b.operator int64_t()));
+	return a;
+}
+
+static inline Key &operator&=(Key &a, BitField<KeyModifierMask> b) {
+	a = static_cast<Key>(static_cast<int>(a) & static_cast<int>(b.operator int64_t()));
+	return a;
+}
+
+static inline Key operator|(Key a, BitField<KeyModifierMask> b) {
+	return (Key)((int)a | (int)b.operator int64_t());
+}
+
+static inline Key operator&(Key a, BitField<KeyModifierMask> b) {
+	return (Key)((int)a & (int)b.operator int64_t());
+}
+
+static inline Key operator+(BitField<KeyModifierMask> a, Key b) {
+	return (Key)((int)a.operator int64_t() + (int)b);
+}
+
+static inline Key operator|(BitField<KeyModifierMask> a, Key b) {
+	return (Key)((int)a.operator int64_t() | (int)b);
+}
 
 template <>
 struct VariantCaster<char32_t> {
@@ -131,7 +214,13 @@ struct PtrToArg<char32_t> {
 template <typename T>
 struct VariantObjectClassChecker {
 	static _FORCE_INLINE_ bool check(const Variant &p_variant) {
-		return true;
+		using TStripped = std::remove_pointer_t<T>;
+		if constexpr (std::is_base_of<Object, TStripped>::value) {
+			Object *obj = p_variant;
+			return Object::cast_to<TStripped>(p_variant) || !obj;
+		} else {
+			return true;
+		}
 	}
 };
 
@@ -147,24 +236,6 @@ struct VariantObjectClassChecker<const Ref<T> &> {
 	}
 };
 
-template <>
-struct VariantObjectClassChecker<Node *> {
-	static _FORCE_INLINE_ bool check(const Variant &p_variant) {
-		Object *obj = p_variant;
-		Node *node = p_variant;
-		return node || !obj;
-	}
-};
-
-template <>
-struct VariantObjectClassChecker<Control *> {
-	static _FORCE_INLINE_ bool check(const Variant &p_variant) {
-		Object *obj = p_variant;
-		Control *control = p_variant;
-		return control || !obj;
-	}
-};
-
 #ifdef DEBUG_METHODS_ENABLED
 
 template <class T>
@@ -172,7 +243,7 @@ struct VariantCasterAndValidate {
 	static _FORCE_INLINE_ T cast(const Variant **p_args, uint32_t p_arg_idx, Callable::CallError &r_error) {
 		Variant::Type argtype = GetTypeInfo<T>::VARIANT_TYPE;
 		if (!Variant::can_convert_strict(p_args[p_arg_idx]->get_type(), argtype) ||
-				!VariantObjectClassChecker<T>::check(p_args[p_arg_idx])) {
+				!VariantObjectClassChecker<T>::check(*p_args[p_arg_idx])) {
 			r_error.error = Callable::CallError::CALL_ERROR_INVALID_ARGUMENT;
 			r_error.argument = p_arg_idx;
 			r_error.expected = argtype;
@@ -187,7 +258,7 @@ struct VariantCasterAndValidate<T &> {
 	static _FORCE_INLINE_ T cast(const Variant **p_args, uint32_t p_arg_idx, Callable::CallError &r_error) {
 		Variant::Type argtype = GetTypeInfo<T>::VARIANT_TYPE;
 		if (!Variant::can_convert_strict(p_args[p_arg_idx]->get_type(), argtype) ||
-				!VariantObjectClassChecker<T>::check(p_args[p_arg_idx])) {
+				!VariantObjectClassChecker<T>::check(*p_args[p_arg_idx])) {
 			r_error.error = Callable::CallError::CALL_ERROR_INVALID_ARGUMENT;
 			r_error.argument = p_arg_idx;
 			r_error.expected = argtype;
@@ -202,7 +273,7 @@ struct VariantCasterAndValidate<const T &> {
 	static _FORCE_INLINE_ T cast(const Variant **p_args, uint32_t p_arg_idx, Callable::CallError &r_error) {
 		Variant::Type argtype = GetTypeInfo<T>::VARIANT_TYPE;
 		if (!Variant::can_convert_strict(p_args[p_arg_idx]->get_type(), argtype) ||
-				!VariantObjectClassChecker<T>::check(p_args[p_arg_idx])) {
+				!VariantObjectClassChecker<T>::check(*p_args[p_arg_idx])) {
 			r_error.error = Callable::CallError::CALL_ERROR_INVALID_ARGUMENT;
 			r_error.argument = p_arg_idx;
 			r_error.expected = argtype;
