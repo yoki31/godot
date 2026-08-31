@@ -23,8 +23,11 @@
  *
  */
 
+#ifndef HB_NUMBER_CC
+#define HB_NUMBER_CC
+#ifdef HB_NUMBER_CC /* Pacify -Wunused-macros. */
+
 #include "hb.hh"
-#include "hb-machinery.hh"
 #include "hb-number.hh"
 #include "hb-number-parser.hh"
 
@@ -78,3 +81,6 @@ hb_parse_double (const char **pp, const char *end, double *pv, bool whole_buffer
   *pp = pend;
   return !whole_buffer || end == pend;
 }
+
+#endif /* HB_NUMBER_CC pacify */
+#endif /* HB_NUMBER_CC guard */
